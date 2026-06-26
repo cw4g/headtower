@@ -1,0 +1,48 @@
+---
+title: Settings
+description: Pre-auth keys, API keys, diagnostics, and the operational dials you touch rarely but need to trust.
+---
+
+import { Callout } from "nextra/components";
+
+# Settings
+
+Settings holds the things you touch rarely but need to trust completely - the
+keys that let devices and tooling onto the network, and the diagnostics that tell
+you Headtower and Headscale agree.
+
+## Pre-auth keys
+
+**Pre-auth keys** let a device join the tailnet without an interactive login -
+the basis for automated and headless enrollment. Headtower lets you:
+
+- **create** keys, choosing whether they are reusable or single-use, ephemeral or
+  persistent, and pre-tagged,
+- see each key's **state and expiry** at a glance,
+- **revoke** a key the moment it should no longer enroll anything.
+
+<Callout type="warning">
+  A pre-auth key is a credential to join your network. Prefer short-lived,
+  single-use, tagged keys, and revoke anything you are unsure about.
+</Callout>
+
+## API keys
+
+**API keys** are how tooling - including Headtower itself - authenticates to
+Headscale's API. The Settings view lists keys with their expiry so nothing
+outlives its usefulness unnoticed, and supports rotating them on a schedule you
+control. Secrets are shown once, at creation, and never again.
+
+## Diagnostics
+
+The diagnostics panel confirms Headtower can reach Headscale and reports what it
+found - the control plane it is pointed at, the version it is talking to, and any
+mismatch worth knowing about. When something is off, this is the first place to
+look: it states the problem plainly rather than failing in the background.
+
+## Trust, not chrome
+
+Settings is intentionally quiet. There are no toggles for their own sake - every
+control here changes who or what can reach the network, or tells you whether the
+console is seeing the truth. That is exactly the kind of surface that should be
+calm and unambiguous.

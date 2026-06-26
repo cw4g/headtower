@@ -1,0 +1,47 @@
+---
+title: Routes
+description: Approve advertised subnet routes and exit nodes, and let auto-approvers handle the routine cases.
+---
+
+import { Callout } from "nextra/components";
+
+# Routes
+
+Nodes can advertise **routes** - subnets they will relay traffic for, or default
+routes that make them exit nodes. Advertising is only an offer; the Routes view
+is where an operator decides what the tailnet actually honors.
+
+## Pending versus approved
+
+Headtower keeps the distinction sharp:
+
+- A **pending** route is advertised by a node but not yet approved. It is inert -
+  it does nothing until you act.
+- An **approved** route is live - other nodes can use it.
+
+Each route shows the **CIDR** (or default route, for an exit node) and the node
+advertising it, in mono so a list of subnets lines up cleanly. Approving or
+revoking a route is a single, explicit action.
+
+<Callout type="info">
+  Exit nodes are just routes too - they advertise default routes. Headtower
+  surfaces them in the same place, so "can this node be an exit node?" is one
+  toggle, not a separate hunt.
+</Callout>
+
+## Auto-approvers
+
+Approving the same routine routes by hand gets old. **Auto-approvers**, defined
+in policy, let you say up front "routes like these, from owners like these, are
+approved automatically" - so a freshly enrolled subnet router or exit node comes
+online without a manual step.
+
+Auto-approvers live in the policy, so they are edited alongside the rest of your
+[Access & ACLs](/features/access). Headtower shows which approvals were automatic
+versus operator-made, so the audit trail stays honest.
+
+<Callout type="warning">
+  Auto-approval is powerful - it grants reachability without a human in the loop.
+  Scope auto-approvers tightly, by tag and owner, so a misadvertised route cannot
+  quietly widen the network.
+</Callout>

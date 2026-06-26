@@ -1,0 +1,46 @@
+---
+title: Access & ACLs
+description: Read, reason about, and change Headscale policy - access and SSH rules, groups, tags, hosts, and auto-approvers - with a structured view, a raw view, and validation.
+---
+
+import { Callout } from "nextra/components";
+
+# Access & ACLs
+
+Policy is the most consequential thing an operator edits, so Headtower gives it
+the most care. The Access view is where you read who can reach what, reason about
+why, and change it without guessing.
+
+## Two views of one policy
+
+- **Structured view** - the policy broken into the parts you actually think in:
+  groups, tag owners, hosts, access rules, and SSH rules. Add a rule, point a
+  source at a destination, scope it to ports - without hand-editing braces.
+- **Raw view** - the policy document itself, for full control and for the cases
+  where you already know exactly what you want to write.
+
+The two stay in sync, so you can reach for whichever matches the change in front
+of you and never lose the ability to drop down to the source of truth.
+
+## What the policy covers
+
+- **Access rules** - which sources may reach which destinations, on which ports.
+- **SSH rules** - who may open a Tailscale SSH session to which targets, as which
+  user.
+- **Groups** - named sets of users you can reference everywhere.
+- **Tag owners** - who is allowed to apply a given tag.
+- **Hosts** - human-readable aliases for CIDRs so rules read in plain language.
+- **Auto-approvers** - routes and exit nodes that are approved automatically when
+  advertised (see [Routes](/features/routes)).
+
+## Validation before it ships
+
+Headscale evaluates the policy as one unit - a change to a single group or tag
+can ripple across many rules. Headtower checks your work before you commit it,
+catching structural mistakes and flagging changes whose blast radius is larger
+than it looks.
+
+<Callout type="warning">
+  Access edits favor review-before-save. You see what a change affects before it
+  takes effect, so policy never shifts silently underneath the tailnet.
+</Callout>

@@ -1,0 +1,92 @@
+---
+title: Configuration
+description: Every Headtower environment variable - required Headscale connection, optional OIDC single sign-on, and local state with HEADTOWER_DB_PATH.
+---
+
+import { Callout } from "nextra/components";
+
+# Configuration
+
+Headtower is configured entirely through the environment. It validates that
+environment at startup and fails loudly - naming the offending variable - rather
+than booting half-configured.
+
+<Callout type="info">
+  These values include secrets and are read server-side only. They are never
+  exposed to the browser, so do not prefix them with `NEXT_PUBLIC_`.
+</Callout>
+
+## Required
+
+| Variable | Description |
+| --- | --- |
+| `HEADSCALE_URL` | Base URL of your Headscale instance. Must be an `http(s)` URL; a trailing slash is stripped automatically. |
+| `HEADSCALE_API_KEY` | Headscale API key Headtower uses to authenticate against the control plane. Grants full control-plane access - guard it. |
+
+```bash
+HEADSCALE_URL="https://headscale.example.com"
+HEADSCALE_API_KEY="<your-headscale-api-key>"
+```
+
+With just these two set, Headtower runs in **operator mode**: whoever holds the
+configured API key is the single authenticated operator. There are no per-user
+accounts until single sign-on is configured.
+
+## Single sign-on (optional)
+
+To put real identities in front of the console, configure OIDC. It works with
+any standards-compliant provider - for example Pocket ID or a generic IdP.
+
+| Variable | Description |
+| --- | --- |
+| `HEADTOWER_OIDC_ISSUER` | Issuer URL of your OpenID provider. |
+| `HEADTOWER_OIDC_CLIENT_ID` | OAuth client ID registered for Headtower. |
+| `HEADTOWER_OIDC_CLIENT_SECRET` | OAuth client secret for that client. |
+
+<Callout type="warning">
+  OIDC is **all-or-nothing**: set all three variables, or none. A partial set is
+  treated as a misconfiguration and Headtower names the gap instead of silently
+  half-enabling sign-in.
+</Callout>
+
+```bash
+HEADTOWER_OIDC_ISSUER="https://id.example.com"
+HEADTOWER_OIDC_CLIENT_ID="headtower"
+HEADTOWER_OIDC_CLIENT_SECRET="<client-secret>"
+```
+
+## Local state (optional)
+
+| Variable | Description |
+| --- | --- |
+| `HEADTOWER_DB_PATH` | Filesystem path to Headtower's own local store - operators and roles, sessions, and the audit log. |
+
+Headscale stays the source of truth for tailnet data; this store only holds
+Headtower-specific state. Point `HEADTOWER_DB_PATH` at a persistent volume so it
+survives restarts and upgrades:
+
+```bash
+HEADTOWER_DB_PATH="/data/headtower.db"
+```
+
+<Callout type="info">
+  In a container, bind-mount the directory that holds this file (see the Docker
+  note in [Getting started](/getting-started)). If unset, Headtower falls back to
+  a sensible default path for local development.
+</Callout>
+
+## A complete example
+
+```bash
+# Required - the Headscale connection.
+HEADSCALE_URL="https://headscale.example.com"
+HEADSCALE_API_KEY="<your-headscale-api-key>"
+
+# Optional - single sign-on (all three, or none).
+HEADTOWER_OIDC_ISSUER="https://id.example.com"
+HEADTOWER_OIDC_CLIENT_ID="headtower"
+HEADTOWER_OIDC_CLIENT_SECRET="<client-secret>"
+
+# Optional - where Headtower keeps its own state.
+HEADTOWER_DB_PATH="/data/headtower.db"
+```

@@ -1,0 +1,48 @@
+---
+title: Dashboard
+description: The signature tailnet coverage view - the control tower at center, nodes on range rings, signal strength standing in for connectivity.
+---
+
+import { Callout } from "nextra/components";
+
+# Dashboard
+
+The Dashboard answers one question fast: **is the tailnet healthy right now?** It
+is deliberately not a wall of stat cards. Its centerpiece is the **coverage
+view** - the one bold element in an otherwise quiet console.
+
+## The coverage view
+
+A schematic radar of your tailnet. The **control tower** - the beacon glyph -
+sits dead center, broadcasting. Every node is a point arranged on concentric
+**range rings** around it:
+
+- **Online nodes** sit on the inner rings, each with a faint signal line back to
+  the tower - within coverage.
+- **Offline nodes** drift to the outer ring, dim and without a signal line - weak
+  or no signal.
+
+It is pure, server-rendered geometry driven by the design tokens, so it stays
+crisp and flips cleanly between dark and light. The metaphor does real work: you
+read connectivity as distance and signal strength, not as a number you have to
+interpret.
+
+<Callout type="info">
+  The coverage view is the deliberate exception to Headtower's restraint. It is
+  allowed to be expressive precisely because everything around it is calm, so
+  your eye goes to the network's actual state.
+</Callout>
+
+## Status readouts
+
+Around the coverage view sit compact, mono readouts of the figures an operator
+checks on a glance:
+
+- nodes **online vs. total**,
+- nodes with keys **expiring soon**,
+- **routes awaiting approval**,
+- recent activity worth noticing.
+
+These are summaries, not dashboards-for-their-own-sake - each one is a doorway
+into the view where you would act on it. Nothing here is decorative; if it is on
+the Dashboard, it is something you would change your behavior over.

@@ -7,7 +7,7 @@ import {
 import { SectionHeading } from "@/components/ui/section-heading";
 import { Chip } from "@/components/ui/chip";
 import { ConnectionError } from "@/components/machines/connection-error";
-import { PolicyEditor } from "./policy-editor";
+import { PolicyWorkbench } from "./policy-workbench";
 
 // The policy is live control-plane state; always read it fresh, never prebuild.
 export const dynamic = "force-dynamic";
@@ -51,7 +51,7 @@ export default async function AccessPage() {
             )}
           </span>
         }
-        description="The tailnet's ACL policy — who can reach whom. A visual rule editor is a later milestone; for now, author the HuJSON document directly."
+        description="The tailnet's ACL policy: who can reach whom. Build it visually, or author the HuJSON document directly."
       />
 
       {error && !policyUnavailable ? (
@@ -59,7 +59,7 @@ export default async function AccessPage() {
       ) : policyUnavailable ? (
         <PolicyUnavailable detail={(error as HeadscaleRequestError).body} />
       ) : (
-        <PolicyEditor
+        <PolicyWorkbench
           initialDocument={document}
           initialUpdatedAt={doc?.updatedAt ?? null}
           unset={unset}

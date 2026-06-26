@@ -1,0 +1,67 @@
+---
+title: Introduction
+description: Headtower is an operator's console for your Headscale tailnet - schematic, keyboard-first, and honest about state.
+---
+
+import { Cards, Callout } from "nextra/components";
+
+# Headtower
+
+**Headtower is an operator's console for a Headscale tailnet** - not a marketing
+dashboard. Headscale is the control plane for a private mesh network, so
+Headtower behaves like an instrument panel: it *reports* state precisely rather
+than decorating it.
+
+Point it at a Headscale instance, give it an API key, and you get a fast, legible
+surface for the work an operator actually does - watching nodes come and go,
+approving routes, shaping access, and rotating keys.
+
+<Callout type="info">
+  Headtower reads and writes Headscale through its REST API. **Headscale stays
+  the single source of truth** for tailnet data; Headtower only keeps a small
+  amount of its own state (operators, roles, audit) on the side.
+</Callout>
+
+## What it is
+
+A schematic control console for the day-to-day operation of a Headscale tailnet.
+Every node, IP, route, and count is real data, shown cleanly in a monospaced,
+tabular readout so values line up like an instrument.
+
+## Three commitments
+
+- **Legible over pretty.** No invented numbers, no filler charts. If a value is
+  on screen it came from your control plane, and it is formatted to be read at a
+  glance.
+- **Keyboard-first, fast.** A command palette is the primary way to move around.
+  Quick filters and inline actions keep you out of modal mazes.
+- **Honest about state.** Online, offline, and expiring are obvious at a glance.
+  Motion reports status; it never exists just to delight.
+
+## Why it looks the way it does
+
+Most control UIs land in one of two places: generic monochrome SaaS, or clean
+blue admin panels. Headtower is deliberately neither. Its identity is the
+**schematic control console** - hairline rules, a grid-aware backdrop, graphite
+ink neutrals (never pure black), and exactly one signal accent: **beacon amber**,
+the light in the tower. Status colors - emerald for online, orange for warning,
+rose for critical - are functional only, never decorative.
+
+The one bold element is the **tailnet coverage view** on the dashboard: the
+control tower at center, your nodes arranged on range rings around it, signal
+strength standing in for connectivity. Everything else stays quiet so the data
+leads.
+
+## Where to go next
+
+<Cards>
+  <Cards.Card title="Getting started" href="/getting-started" arrow />
+  <Cards.Card title="Concepts" href="/concepts" arrow />
+  <Cards.Card title="Features" href="/features" arrow />
+  <Cards.Card title="Configuration" href="/configuration" arrow />
+</Cards>
+
+<Callout type="warning">
+  Headtower is an independent project. It is not affiliated with, endorsed by, or
+  derived from Headscale or Tailscale - it simply speaks Headscale's API.
+</Callout>

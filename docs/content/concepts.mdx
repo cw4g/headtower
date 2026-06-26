@@ -1,0 +1,82 @@
+---
+title: Concepts
+description: The core Headscale concepts Headtower operates on - tailnet, nodes, routes, and ACLs.
+---
+
+import { Callout } from "nextra/components";
+
+# Concepts
+
+Headtower is a lens over Headscale, so it speaks Headscale's vocabulary. If you
+already run a tailnet these will be familiar; this page pins down what each term
+means *inside Headtower* so the rest of the docs read cleanly.
+
+## Tailnet
+
+Your **tailnet** is the private mesh network Headscale coordinates - the whole
+set of nodes, users, and policy that make up one logical network. Headtower is
+scoped to exactly one tailnet: the one served by the `HEADSCALE_URL` you point it
+at. There is no cross-tailnet switching; one console, one control plane.
+
+## Nodes
+
+A **node** (a *machine* in Headtower's UI) is a single device enrolled in the
+tailnet - a laptop, a server, a phone, a container. Each node carries the data an
+operator cares about:
+
+- a stable **identity** and friendly name,
+- its **Tailscale IPs** (one IPv4, one IPv6),
+- the **user** it belongs to,
+- **tags** that drive policy (for example `tag:server`, `tag:ci`),
+- **online state** and last-seen time,
+- a **key expiry** - when the node's key must be renewed or it drops off.
+
+<Callout type="info">
+  Headtower never invents node data. Online state, addresses, and expiry come
+  straight from Headscale, formatted in mono and tabular figures so a column of
+  IPs or timestamps lines up like a readout.
+</Callout>
+
+## Routes
+
+Nodes can advertise **routes** - subnets they are willing to relay traffic for -
+turning a single node into a gateway to a wider network. Two cases matter:
+
+- **Subnet routes** expose a CIDR (for example `10.0.0.0/24`) reachable *through*
+  the advertising node.
+- **Exit nodes** advertise default routes so other devices can send all their
+  traffic out through that node.
+
+Advertised is not the same as active. A route an operator has not approved is
+inert. Headtower surfaces the pending/approved distinction directly so you can
+see what a node *offers* versus what the tailnet actually *honors*. Approving
+(or auto-approving) a route is what turns it on.
+
+## ACLs
+
+**ACLs** - access control lists, expressed as Headscale's policy - decide who can
+reach what. The policy is the single document that defines:
+
+- **groups** of users and **tag owners**,
+- **hosts** (named CIDRs you can reference by alias),
+- **access rules** (which sources may reach which destinations and ports),
+- **SSH rules** (who may open a Tailscale SSH session to which targets),
+- **auto-approvers** (routes and exit nodes that are approved automatically).
+
+The policy is the most consequential thing an operator edits, so Headtower treats
+it carefully: a structured view to reason about rules, a raw view for full
+control, and validation to catch mistakes before they ship. See
+[Access & ACLs](/features/access).
+
+<Callout type="warning">
+  Headscale evaluates the policy as one unit. A change to a group or tag can
+  affect many rules at once, so Headtower favors review-before-save over
+  silent edits.
+</Callout>
+
+## How the pieces fit
+
+A **tailnet** is made of **nodes** owned by users and described by **tags**.
+**Routes** decide what those nodes can reach beyond themselves, and **ACLs**
+decide who is allowed to reach them. Headtower gives each of these its own view,
+plus a dashboard that shows the whole picture at a glance.

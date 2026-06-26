@@ -1,0 +1,36 @@
+---
+title: Features
+description: A tour of the Headtower console - Machines, the Dashboard coverage view, Access and ACLs, Routes, Settings, and the command palette.
+---
+
+import { Cards } from "nextra/components";
+
+# Features
+
+Headtower is organized around the things an operator does, not around a grid of
+stat cards. Each view is a focused instrument; the command palette ties them
+together so you rarely have to reach for the mouse.
+
+<Cards>
+  <Cards.Card title="Machines" href="/features/machines" arrow />
+  <Cards.Card title="Dashboard" href="/features/dashboard" arrow />
+  <Cards.Card title="Access & ACLs" href="/features/access" arrow />
+  <Cards.Card title="Routes" href="/features/routes" arrow />
+  <Cards.Card title="Settings" href="/features/settings" arrow />
+  <Cards.Card title="Command palette" href="/features/command-palette" arrow />
+</Cards>
+
+## The shape of the console
+
+- **Machines** is the home view - the core readout of every node in the tailnet.
+- **Dashboard** answers "is the network healthy?" at a glance with the live
+  coverage view.
+- **Access & ACLs** is where policy is read, reasoned about, and changed.
+- **Routes** is where advertised subnets and exit nodes are approved.
+- **Settings** holds keys, diagnostics, and the things you touch rarely but need
+  to trust.
+- **Command palette** is the keyboard-first way through all of it.
+
+Everything shares one design language: hairline rules, mono for every identifier
+and number, a single beacon-amber accent, and status colors that mean exactly
+one thing each.

@@ -1,0 +1,15 @@
+# Standalone docs workspace.
+#
+# This file makes `docs/` its own pnpm root, so `pnpm install` here resolves
+# dependencies into docs/node_modules instead of attaching to the Headtower app
+# workspace one level up. The docs site never shares the app's package.json.
+ignoredBuiltDependencies:
+  - sharp
+  - unrs-resolver
+
+# Nextra 4.6.1's theme builds its prop schema with z.custom() fields that are
+# stripped before parse (e.g. Layout's `children`). zod >= 4.4.0 treats a
+# missing z.custom() key as a non-optional error, which breaks every page
+# render. Pin zod to the last 4.3.x where a missing custom field still passes.
+overrides:
+  zod: 4.3.6

@@ -1,0 +1,65 @@
+/*
+  Headtower docs - brand layer over nextra-theme-docs.
+
+  The theme's primary hue and page backgrounds are set in app/layout.jsx (the
+  <Head color/backgroundColor> props). This file applies the typographic and
+  small schematic touches that make the docs feel like the console: Geist for
+  text, Geist Mono for code and data, hairline rules, beacon-amber edges.
+*/
+
+:root {
+  --ht-beacon: #f5b544;
+  --ht-line: #e6e3dc;
+}
+
+html.dark {
+  --ht-line: #262d37;
+}
+
+body {
+  font-family:
+    var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+code,
+pre,
+kbd,
+samp,
+.nextra-code,
+.nextra-code * {
+  font-family: var(--font-geist-mono), ui-monospace, "SF Mono", monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Brand lockup in the navbar. */
+.ht-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.ht-logo__name {
+  font-weight: 600;
+  font-size: 1.05rem;
+  letter-spacing: -0.012em;
+}
+.ht-logo__tag {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  padding: 0.1rem 0.34rem;
+  border: 1px solid var(--ht-line);
+  border-radius: 0.3rem;
+  color: var(--ht-beacon);
+  opacity: 0.9;
+}
+
+/* A faint beacon underline on hovered sidebar links - signal, not decoration. */
+.nextra-sidebar-container a:hover {
+  text-decoration-color: var(--ht-beacon);
+}
+
+/* Tighten code spans so identifiers, IPs and tags read like an instrument. */
+:not(pre) > code {
+  letter-spacing: -0.01em;
+}
