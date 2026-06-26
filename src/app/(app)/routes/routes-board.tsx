@@ -215,13 +215,20 @@ function RouteRow({
 
   return (
     <>
-      <Tr className={error ? "border-0 hover:bg-transparent" : undefined}>
+      <Tr
+        className={cn(
+          // Routes awaiting a decision carry a faint warn wash so the operator's
+          // eye lands on what still needs action.
+          state === "pending" && "bg-warn-500/[0.05]",
+          error && "border-0 hover:bg-transparent",
+        )}
+      >
         <Td className="pl-4" data>
           {cidr}
         </Td>
         <Td>
-          <span className="inline-flex items-center gap-1.5 text-xs text-ink-muted">
-            <TypeIcon className="h-3.5 w-3.5 text-ink-faint" aria-hidden />
+          <span className="inline-flex items-center gap-1.5 rounded-[0.3rem] border border-line bg-surface-2 px-1.5 py-0.5 text-xs text-ink-muted">
+            <TypeIcon className="h-3 w-3 text-ink-faint" aria-hidden />
             {typeLabel}
           </span>
         </Td>

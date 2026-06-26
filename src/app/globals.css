@@ -119,3 +119,55 @@
   scrollbar-width: thin;
   scrollbar-color: var(--line-strong) transparent;
 }
+
+/*
+  Accessibility floor: a visible beacon focus ring for any link or button that
+  doesn't define its own. Components that opt into `focus-visible:outline-none`
+  (with their own ring) sit in Tailwind's utilities layer and override this.
+*/
+@layer base {
+  a:focus-visible,
+  button:focus-visible {
+    outline: 2px solid var(--color-beacon-500);
+    outline-offset: 2px;
+  }
+}
+
+/*
+  Coverage radar sweep - the tower's signal washing out across the range rings.
+  Slow and faint: motion that reports the control plane is live, not decoration.
+  Neutralised by the reduced-motion rule below.
+*/
+@keyframes coverage-sweep {
+  0% {
+    transform: scale(0.18);
+    opacity: 0;
+  }
+  18% {
+    opacity: 0.4;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+.coverage-sweep {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: coverage-sweep 5.5s ease-out infinite;
+}
+
+/*
+  Motion floor: when the operator asks the OS to reduce motion, every animation
+  and transition collapses to near-instant. One rule covers the whole console.
+*/
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -292,6 +292,16 @@ function MachineRow({
             {node.hostname}
           </span>
         )}
+        {node.agent && (node.agent.os || node.agent.clientVersion) && (
+          <span
+            className="data block text-xs text-ink-faint"
+            title="Reported by agent"
+          >
+            {[node.agent.os, node.agent.clientVersion]
+              .filter(Boolean)
+              .join(" · ")}
+          </span>
+        )}
       </Td>
 
       {/* Owner */}

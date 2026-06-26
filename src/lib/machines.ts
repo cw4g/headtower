@@ -18,6 +18,18 @@ export const DEFAULT_ROUTES = ["0.0.0.0/0", "::/0"] as const;
 /** Status-dot kinds, matching the StatusDot primitive. */
 export type DotStatus = "online" | "warn" | "critical" | "idle";
 
+/**
+ * Device facts contributed by the optional agent sidecar. Kept as a small,
+ * serialisable projection (structurally a subset of `AgentPeer`) so it can be
+ * merged into a `NodeView` and rendered in the client table. Absent when no
+ * agent is configured or no peer matched the node.
+ */
+export interface NodeAgentInfo {
+  os: string | null;
+  clientVersion: string | null;
+  endpoints: string[];
+}
+
 /** A serialisable projection of a Node for rendering in client + server views. */
 export interface NodeView {
   id: string;
@@ -55,6 +67,8 @@ export interface NodeView {
   subnetRoutes: string[];
   /** Routes advertised by the node but not yet approved. */
   pendingRoutes: string[];
+  /** Agent-sourced device facts (OS, client version, endpoints), or null. */
+  agent: NodeAgentInfo | null;
 }
 
 /**
@@ -160,8 +174,16 @@ export function formatUtc(iso: string | null): string {
   );
 }
 
-/** Project a raw Node into the serialisable view model used by the UI. */
-export function toNodeView(node: Node, nowMs: number): NodeView {
+/**
+ * Project a raw Node into the serialisable view model used by the UI. Pass the
+ * matched agent peer (already looked up) to fold in OS / client version /
+ * endpoints; omit it to render the node with no agent enrichment.
+ */
+export function toNodeView(
+  node: Node,
+  nowMs: number,
+  agent: NodeAgentInfo | null = null,
+): NodeView {
   const { ipv4, ipv6 } = splitAddresses(node.ipAddresses ?? []);
 
   const expiryMs = node.expiry ? Date.parse(node.expiry) : NaN;
@@ -207,6 +229,13 @@ export function toNodeView(node: Node, nowMs: number): NodeView {
     advertisesExit,
     subnetRoutes,
     pendingRoutes,
+    agent: agent
+      ? {
+          os: agent.os,
+          clientVersion: agent.clientVersion,
+          endpoints: agent.endpoints,
+        }
+      : null,
   };
 }
 

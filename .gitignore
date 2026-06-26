@@ -44,3 +44,6 @@ next-env.d.ts
 docs/node_modules/
 docs/.next/
 docs/out/
+
+# runtime data (sqlite)
+data/

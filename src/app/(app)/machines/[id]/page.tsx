@@ -4,15 +4,18 @@ import { notFound } from "next/navigation";
 import {
   ArrowLeft,
   Antenna,
+  Cpu,
   Fingerprint,
   KeyRound,
   MapPin,
   Network,
   Route as RouteIcon,
   Clock,
+  Waypoints,
 } from "lucide-react";
 import { nodes as nodesApi, HeadscaleRequestError } from "@/lib/headscale";
 import type { Node } from "@/lib/headscale";
+import { getAgentPeers } from "@/lib/agent";
 import { sessionCan } from "@/lib/authz";
 import {
   toNodeView,
@@ -21,6 +24,7 @@ import {
   formatUtc,
   relativeTime,
   nowMs,
+  type NodeAgentInfo,
   type NodeView,
 } from "@/lib/machines";
 import { Card, CardHeader, CardTitle, CardBody } from "@/components/ui/card";
@@ -55,6 +59,11 @@ export default async function MachineDetailPage({
   // detail without the mutating Actions panel.
   const canManage = await sessionCan("machines.write");
 
+  // Best-effort agent enrichment for this node; null when no sidecar matched.
+  const agent = node
+    ? (await getAgentPeers()).lookup(node.name, node.ipAddresses ?? [])
+    : null;
+
   return (
     <div className="flex flex-col gap-6">
       <Link
@@ -68,15 +77,23 @@ export default async function MachineDetailPage({
       {error ? (
         <ConnectionError error={error} />
       ) : node ? (
-        <MachineDetail node={node} canManage={canManage} />
+        <MachineDetail node={node} canManage={canManage} agent={agent} />
       ) : null}
     </div>
   );
 }
 
-function MachineDetail({ node, canManage }: { node: Node; canManage: boolean }) {
+function MachineDetail({
+  node,
+  canManage,
+  agent,
+}: {
+  node: Node;
+  canManage: boolean;
+  agent: NodeAgentInfo | null;
+}) {
   const now = nowMs();
-  const view = toNodeView(node, now);
+  const view = toNodeView(node, now, agent);
   const dot = nodeDot(view);
 
   return (
@@ -86,6 +103,7 @@ function MachineDetail({ node, canManage }: { node: Node; canManage: boolean }) 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="flex flex-col gap-4 lg:col-span-2">
           <AddressesCard view={view} />
+          {view.agent && <SystemCard agent={view.agent} />}
           <RoutesCard view={view} node={node} />
           <IdentityCard node={node} view={view} />
         </div>
@@ -242,6 +260,64 @@ function AddressesCard({ view }: { view: NodeView }) {
         {view.addresses.length === 0 && (
           <p className="py-2 text-sm text-ink-faint">No addresses assigned.</p>
         )}
+      </CardBody>
+    </Card>
+  );
+}
+
+/** Device facts the control plane can't see, contributed by the agent sidecar. */
+function SystemCard({ agent }: { agent: NodeAgentInfo }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Cpu className="h-4 w-4 text-ink-faint" aria-hidden />
+          System
+        </CardTitle>
+        <span className="data text-xs text-ink-faint">via agent</span>
+      </CardHeader>
+      <CardBody className="py-1">
+        {agent.os && (
+          <DataRow label="OS" mono copy={agent.os} title={agent.os}>
+            {agent.os}
+          </DataRow>
+        )}
+        {agent.clientVersion && (
+          <DataRow
+            label="Client"
+            mono
+            copy={agent.clientVersion}
+            title={agent.clientVersion}
+          >
+            {agent.clientVersion}
+          </DataRow>
+        )}
+        <div className="flex flex-col gap-1.5 py-2.5">
+          <span className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.08em] text-ink-faint">
+            <Waypoints className="h-3.5 w-3.5" aria-hidden />
+            Endpoints
+          </span>
+          {agent.endpoints.length > 0 ? (
+            <div className="flex flex-col gap-1">
+              {agent.endpoints.map((endpoint) => (
+                <div
+                  key={endpoint}
+                  className="flex items-center justify-between gap-2"
+                >
+                  <span
+                    className="data truncate text-sm text-ink"
+                    title={endpoint}
+                  >
+                    {endpoint}
+                  </span>
+                  <CopyButton value={endpoint} label="Copy endpoint" />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <span className="text-sm text-ink-faint">None reported.</span>
+          )}
+        </div>
       </CardBody>
     </Card>
   );

@@ -1,10 +1,12 @@
 import * as React from "react";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { ConsoleTopBar } from "@/components/console-top-bar";
 import type { Account } from "@/components/account-menu";
 import { getSession } from "@/lib/auth";
 import { isOidcEnabled } from "@/lib/auth/oidc";
 import { ROLE_LABELS } from "@/lib/rbac";
+import { THEME_COOKIE, normalizeTheme } from "@/lib/theme";
 
 /**
  * The operator-console chrome: the schematic top bar over a grid-field canvas,
@@ -14,6 +16,11 @@ import { ROLE_LABELS } from "@/lib/rbac";
  */
 export async function AppShell({ children }: { children: React.ReactNode }) {
   const session = await getSession();
+
+  // The saved theme, read once here so the top-bar toggle renders its active
+  // segment correctly on the first paint (the inline script resolves the same
+  // cookie for the page itself). Falls back to the dark default when unset.
+  const theme = normalizeTheme((await cookies()).get(THEME_COOKIE)?.value);
 
   // Secure check: in OIDC mode a missing/invalid session must not reach the app.
   // The proxy already does the optimistic redirect; this also catches a valid
@@ -34,7 +41,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen flex-col bg-canvas">
-      <ConsoleTopBar account={account} />
+      <ConsoleTopBar account={account} theme={theme} />
       <main className="relative flex-1">
         <div
           className="grid-field pointer-events-none absolute inset-0"

@@ -108,7 +108,12 @@ function csvRow(cells: readonly string[]): string {
 }
 
 function csvCell(value: string): string {
-  return `"${String(value).replace(/"/g, '""')}"`;
+  // Neutralize CSV formula injection: a cell beginning with =, +, -, @, or a
+  // tab/CR is treated as a formula by spreadsheet apps. Prefix those with a
+  // leading apostrophe so the value renders as literal text.
+  const s = String(value);
+  const safe = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+  return `"${safe.replace(/"/g, '""')}"`;
 }
 
 function safeJson(value: unknown): string {

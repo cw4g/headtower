@@ -1,5 +1,6 @@
 import { Server } from "lucide-react";
 import { nodes as nodesApi } from "@/lib/headscale";
+import { getAgentPeers } from "@/lib/agent";
 import { toNodeView, nowMs } from "@/lib/machines";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -19,9 +20,16 @@ export default async function MachinesPage() {
 
   try {
     const now = nowMs();
-    const list = await nodesApi.list();
+    // Agent enrichment is best-effort and fails quiet, so fetch it alongside the
+    // node list; an absent sidecar just yields an empty index.
+    const [list, agents] = await Promise.all([
+      nodesApi.list(),
+      getAgentPeers(),
+    ]);
     views = list
-      .map((node) => toNodeView(node, now))
+      .map((node) =>
+        toNodeView(node, now, agents.lookup(node.name, node.ipAddresses ?? [])),
+      )
       .sort((a, b) => {
         // Online first, then by name — the operator's reading order.
         if (a.online !== b.online) return a.online ? -1 : 1;

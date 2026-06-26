@@ -10,11 +10,11 @@
  *     expects: `{ rows: [...] }` for `all`/`values`, a single row array for
  *     `get`, and an empty result for `run`.
  *
- * On first import this opens (creating the parent directory if needed) the DB at
- * `HEADTOWER_DB_PATH` (default `./data/headtower.db`), sets pragmatic pragmas,
- * and runs the idempotent {@link SCHEMA_DDL}. The connection is cached on
- * `globalThis` so dev hot-reload reuses one handle instead of leaking file
- * descriptors.
+ * On first query (never at import time) this opens - creating the parent
+ * directory if needed - the DB at `HEADTOWER_DB_PATH` (default
+ * `./data/headtower.db`), sets pragmatic pragmas, and runs the idempotent
+ * {@link SCHEMA_DDL}. The connection is cached on `globalThis` so dev hot-reload
+ * reuses one handle instead of leaking file descriptors.
  *
  * SERVER-ONLY. Importing this (or anything in `@/lib/db`) into a client
  * component pulls `node:sqlite` into the browser bundle and breaks the build.
@@ -76,8 +76,32 @@ const globalForDb = globalThis as unknown as {
   __headtowerSqlite?: DatabaseSync;
 };
 
-export const sqlite: DatabaseSync =
-  globalForDb.__headtowerSqlite ?? (globalForDb.__headtowerSqlite = openDatabase());
+/**
+ * Open the connection lazily, on first query - never at import time.
+ *
+ * `next build` collects page configuration by importing every route module; if
+ * opening the database were a module-load side effect, that import would touch
+ * disk (and, with a leftover WAL-mode file, the parallel build workers would
+ * race into "database is locked"). Deferring the open keeps module evaluation
+ * pure, so the build - and operator mode, which needs no database at all -
+ * stays clean. The handle is still cached on `globalThis` for hot-reload reuse.
+ */
+function getConnection(): DatabaseSync {
+  return (globalForDb.__headtowerSqlite ??= openDatabase());
+}
+
+/**
+ * The raw `DatabaseSync`, resolved on first access. A thin proxy preserves the
+ * eager export's shape and type while keeping the open lazy: importing this
+ * module opens nothing until a property is actually read.
+ */
+export const sqlite: DatabaseSync = new Proxy({} as DatabaseSync, {
+  get(_target, prop, receiver) {
+    const conn = getConnection();
+    const value = Reflect.get(conn, prop, receiver);
+    return typeof value === "function" ? value.bind(conn) : value;
+  },
+});
 
 // Prepared-statement cache. `node:sqlite` is synchronous and JS is single
 // threaded, so a statement reused across awaits always runs to completion
@@ -87,7 +111,7 @@ const statementCache = new Map<string, StatementSync>();
 function prepare(sqlText: string): StatementSync {
   let stmt = statementCache.get(sqlText);
   if (!stmt) {
-    stmt = sqlite.prepare(sqlText);
+    stmt = getConnection().prepare(sqlText);
     statementCache.set(sqlText, stmt);
   }
   return stmt;

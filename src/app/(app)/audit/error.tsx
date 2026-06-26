@@ -2,8 +2,8 @@
 
 import { RouteError } from "@/components/route-error";
 
-/** Last-resort boundary for the machines segment. */
-export default function MachinesError(props: {
+/** Last-resort boundary for the audit segment. */
+export default function AuditError(props: {
   error: Error & { digest?: string };
   reset: () => void;
 }) {

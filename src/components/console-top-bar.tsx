@@ -18,7 +18,9 @@ import {
 } from "lucide-react";
 import { BeaconMark } from "@/components/beacon-mark";
 import { AccountMenu, type Account } from "@/components/account-menu";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Kbd } from "@/components/ui/kbd";
+import type { Theme } from "@/lib/theme";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -55,7 +57,13 @@ function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(href + "/");
 }
 
-export function ConsoleTopBar({ account }: { account?: Account | null }) {
+export function ConsoleTopBar({
+  account,
+  theme,
+}: {
+  account?: Account | null;
+  theme?: Theme;
+}) {
   const pathname = usePathname() ?? "";
 
   const openCommand = React.useCallback(() => {
@@ -125,16 +133,19 @@ export function ConsoleTopBar({ account }: { account?: Account | null }) {
             <button
               type="button"
               onClick={openCommand}
-              className="group flex h-8 items-center gap-2 rounded-control border border-line-strong bg-surface-2 pl-2 pr-1.5 text-sm text-ink-faint transition-colors hover:border-ink-faint hover:text-ink-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beacon-500/40"
+              aria-label="Search or jump to a section"
+              className="group flex h-8 items-center gap-2 rounded-control border border-line-strong bg-surface-2 px-2 text-sm text-ink-faint transition-colors hover:border-ink-faint hover:text-ink-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beacon-500/40 sm:pr-1.5"
             >
               <Search className="h-3.5 w-3.5" aria-hidden />
               <span className="hidden sm:inline">Search or jump</span>
-              <Kbd className="ml-1">⌘K</Kbd>
+              <Kbd className="ml-1 hidden sm:inline-flex">⌘K</Kbd>
             </button>
 
             <span className="data hidden text-xs text-ink-faint sm:inline">
               {APP_VERSION}
             </span>
+
+            <ThemeToggle initialTheme={theme} />
 
             {account && <AccountMenu account={account} />}
 

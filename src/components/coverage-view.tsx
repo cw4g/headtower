@@ -134,6 +134,23 @@ export function CoverageView({ points }: { points: CoveragePoint[] }) {
         strokeWidth={1}
       />
 
+      {/* Sonar sweep: the tower's signal washing out across the range rings.
+          Two staggered pulses for a continuous wash; paused under
+          prefers-reduced-motion via the global motion floor. */}
+      {total > 0 &&
+        [0, 1].map((i) => (
+          <ellipse
+            key={`sweep-${i}`}
+            cx={CX}
+            cy={CY}
+            rx={120}
+            ry={120 * K}
+            className="coverage-sweep fill-none stroke-beacon-500"
+            strokeWidth={1.5}
+            style={{ animationDelay: `${i * 2.75}s` }}
+          />
+        ))}
+
       {/* Signal lines: the tower's light reaching each online node. */}
       {online.map((p) => (
         <line

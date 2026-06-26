@@ -1,0 +1,6 @@
+# Compiled binary (same name as the module directory)
+/agent
+
+# tsnet state directory, if pointed here
+/state/
+*.state
