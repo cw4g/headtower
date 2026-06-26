@@ -1,26 +1,121 @@
 @import "tailwindcss";
 
+/*
+  Headtower design system - "operator's console".
+
+  The subject is a control plane for a private mesh network, so the UI is built
+  like an instrument panel, not a marketing dashboard: schematic, hairline-ruled,
+  mono for every identifier and number, and exactly one signal accent (beacon
+  amber - the light in the tower). Dark-first, with a full light theme.
+
+  Tokens are split in two:
+    - Fixed scales (graphite / beacon / status) live in @theme so they mint
+      utilities like `bg-graphite-900` and `text-beacon-500`.
+    - Semantic surfaces (canvas / surface / line / ink) are CSS variables that
+      flip with the theme, mapped to utilities via @theme inline.
+*/
+
+@theme {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", monospace;
+
+  /* Graphite - the structural neutral. Cool blue-ink, never pure black. */
+  --color-graphite-50: #f6f7f9;
+  --color-graphite-100: #eceef1;
+  --color-graphite-200: #d9dde2;
+  --color-graphite-300: #b6bdc6;
+  --color-graphite-400: #8a95a1;
+  --color-graphite-500: #646f7d;
+  --color-graphite-600: #4a5460;
+  --color-graphite-700: #353d47;
+  --color-graphite-800: #1f262e;
+  --color-graphite-900: #161b22;
+  --color-graphite-950: #0e1117;
+
+  /* Beacon - the single signal accent. Warm gold, the light in the tower. */
+  --color-beacon-300: #ffd98a;
+  --color-beacon-400: #f9c45c;
+  --color-beacon-500: #f5b544;
+  --color-beacon-600: #e09b22;
+
+  /* Status - strictly functional, never decorative. */
+  --color-online-500: #34d399;
+  --color-online-600: #10b981;
+  --color-warn-500: #fb923c;
+  --color-critical-500: #f43f5e;
+
+  --radius-card: 0.625rem;
+  --radius-control: 0.5rem;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --canvas: #fbfaf8;
+  --surface: #ffffff;
+  --surface-2: #f5f6f8;
+  --line: #e6e3dc;
+  --line-strong: #d4d0c6;
+  --ink: #1a1d21;
+  --ink-muted: #5a6168;
+  --ink-faint: #8a929b;
+  --grid: rgba(20, 24, 30, 0.04);
+}
+
+.dark {
+  --canvas: #0e1117;
+  --surface: #161b22;
+  --surface-2: #1f262e;
+  --line: #262d37;
+  --line-strong: #333c48;
+  --ink: #e6edf3;
+  --ink-muted: #9da7b3;
+  --ink-faint: #646f7d;
+  --grid: rgba(255, 255, 255, 0.025);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  *,
+  ::after,
+  ::before {
+    border-color: var(--line);
+  }
+  body {
+    background: var(--canvas);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  /* Identifiers, IPs, counts: mono + tabular so columns line up like a readout. */
+  .data {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+  .tnum {
+    font-variant-numeric: tabular-nums;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Schematic hairline grid - the console backdrop. Opt-in via .grid-field. */
+.grid-field {
+  background-image:
+    linear-gradient(to right, var(--grid) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
 }

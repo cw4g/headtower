@@ -1,0 +1,95 @@
+/**
+ * Nodes (machines) resource - Headscale 0.26 - 0.29.
+ *
+ *   GET    /api/v1/node                          list()
+ *   GET    /api/v1/node/{id}                     get(id)
+ *   POST   /api/v1/node/{id}/rename/{name}       rename(id, name)
+ *   POST   /api/v1/node/{id}/tags        { tags }    setTags(id, tags)
+ *   POST   /api/v1/node/{id}/approve_routes { routes } approveRoutes(id, routes)
+ *   POST   /api/v1/node/{id}/expire              expire(id)
+ *   DELETE /api/v1/node/{id}                     remove(id)
+ *
+ * Server-only; see ./client.
+ */
+
+import { request } from "./client";
+import type {
+  ListNodesResponse,
+  Node,
+  NodeResponse,
+} from "./types";
+
+export type { Node } from "./types";
+
+/** Accepts the string id from the API or a number for convenience. */
+type NodeId = string | number;
+
+function seg(value: NodeId | string): string {
+  return encodeURIComponent(String(value));
+}
+
+export const nodes = {
+  /**
+   * List all nodes. Optionally filter by owning user (`user` is the username on
+   * 0.26 - 0.28; the filter is a no-op on 0.29 which returns every node).
+   */
+  async list(options: { user?: string } = {}): Promise<Node[]> {
+    const res = await request<ListNodesResponse>("/v1/node", {
+      query: { user: options.user },
+    });
+    return res.nodes ?? [];
+  },
+
+  /** Fetch a single node by id. */
+  async get(id: NodeId): Promise<Node> {
+    const res = await request<NodeResponse>(`/v1/node/${seg(id)}`);
+    return res.node;
+  },
+
+  /** Set a node's given (display) name. Returns the updated node. */
+  async rename(id: NodeId, newName: string): Promise<Node> {
+    const res = await request<NodeResponse>(
+      `/v1/node/${seg(id)}/rename/${seg(newName)}`,
+      { method: "POST" },
+    );
+    return res.node;
+  },
+
+  /**
+   * Replace the node's forced/ACL tags. `tags` should be the complete set; an
+   * empty array clears them. Each tag must be `tag:`-prefixed.
+   */
+  async setTags(id: NodeId, tags: string[]): Promise<Node> {
+    const res = await request<NodeResponse>(`/v1/node/${seg(id)}/tags`, {
+      method: "POST",
+      body: { tags },
+    });
+    return res.node;
+  },
+
+  /**
+   * Set the routes an operator approves this node to serve. `routes` is the
+   * complete approved set (CIDRs); pass the node's existing approved routes
+   * plus/minus the change. Returns the updated node.
+   */
+  async approveRoutes(id: NodeId, routes: string[]): Promise<Node> {
+    const res = await request<NodeResponse>(
+      `/v1/node/${seg(id)}/approve_routes`,
+      { method: "POST", body: { routes } },
+    );
+    return res.node;
+  },
+
+  /** Expire a node's key immediately, forcing it to re-authenticate. */
+  async expire(id: NodeId): Promise<Node> {
+    const res = await request<NodeResponse>(`/v1/node/${seg(id)}/expire`, {
+      method: "POST",
+    });
+    return res.node;
+  },
+
+  /** Permanently delete a node from the tailnet. */
+  async remove(id: NodeId): Promise<void> {
+    await request<unknown>(`/v1/node/${seg(id)}`, { method: "DELETE" });
+  },
+};
