@@ -31,6 +31,8 @@ interface PolicyWorkbenchProps {
   initialUpdatedAt: string | null;
   /** True when the read returned no document yet - first authoring. */
   unset?: boolean;
+  /** When false (role lacks acls.write), the editor is view-only: Save is off. */
+  canSave?: boolean;
 }
 
 type Tab = "visual" | "json";
@@ -49,6 +51,7 @@ export function PolicyWorkbench({
   initialDocument,
   initialUpdatedAt,
   unset = false,
+  canSave: writable = true,
 }: PolicyWorkbenchProps) {
   const initial = React.useMemo(
     () => parsePolicy(initialDocument),
@@ -73,7 +76,7 @@ export function PolicyWorkbench({
 
   const dirty = value !== savedValue;
   const validity = React.useMemo<Validity>(() => validateHujson(value), [value]);
-  const canSave = dirty && !pending && value.trim() !== "";
+  const canSave = writable && dirty && !pending && value.trim() !== "";
 
   function clearTransient() {
     if (saveError) setSaveError(null);
@@ -81,7 +84,7 @@ export function PolicyWorkbench({
   }
 
   const commit = React.useCallback(() => {
-    if (value.trim() === "" || pending) return;
+    if (!writable || value.trim() === "" || pending) return;
     setSaveError(null);
     setJustSaved(false);
     startTransition(async () => {
@@ -94,19 +97,19 @@ export function PolicyWorkbench({
         setSaveError(result.error ?? "Couldn't save the policy.");
       }
     });
-  }, [value, pending]);
+  }, [value, pending, writable]);
 
   // Cmd/Ctrl-S commits from anywhere, pre-empting the browser's save dialog.
   React.useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
-        if (dirty && value.trim() !== "") commit();
+        if (writable && dirty && value.trim() !== "") commit();
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [commit, dirty, value]);
+  }, [commit, dirty, value, writable]);
 
   // Switching to Visual re-parses the current document so the builder reflects
   // any raw edits. A parse failure routes to a notice instead of the builder.
@@ -163,6 +166,7 @@ export function PolicyWorkbench({
             justSaved={justSaved}
             updatedAt={updatedAt}
             unset={unset}
+            writable={writable}
           />
           <Button variant="solid" size="sm" disabled={!canSave} onClick={commit}>
             <Save className="h-3.5 w-3.5" aria-hidden />
@@ -281,13 +285,23 @@ function SaveState({
   justSaved,
   updatedAt,
   unset,
+  writable,
 }: {
   dirty: boolean;
   pending: boolean;
   justSaved: boolean;
   updatedAt: string | null;
   unset: boolean;
+  writable: boolean;
 }) {
+  if (!writable) {
+    return (
+      <span className="flex items-center gap-1.5 text-[11px] text-ink-faint">
+        <CircleSlash className="h-3.5 w-3.5" aria-hidden />
+        View only
+      </span>
+    );
+  }
   if (pending) {
     return <span className="text-[11px] text-ink-faint">Committing…</span>;
   }

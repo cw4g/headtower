@@ -1,5 +1,6 @@
 import { Network } from "lucide-react";
 import { routes as routesApi } from "@/lib/headscale";
+import { sessionCan } from "@/lib/authz";
 import { groupHasRoutes, toRouteGroup, type RouteGroup } from "@/lib/routes";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { Chip } from "@/components/ui/chip";
@@ -36,6 +37,8 @@ export default async function RoutesPage() {
 
   const nodeCount = groups?.length ?? 0;
   const pendingTotal = groups?.reduce((sum, g) => sum + g.pendingCount, 0) ?? 0;
+  // Approving/revoking routes needs routes.write; read-only roles just observe.
+  const canManage = await sessionCan("routes.write");
 
   return (
     <div className="flex flex-col gap-6">
@@ -68,7 +71,7 @@ export default async function RoutesPage() {
           description="When a machine advertises a subnet route or offers to act as an exit node, it appears here for approval."
         />
       ) : (
-        <RoutesBoard groups={groups} />
+        <RoutesBoard groups={groups} canManage={canManage} />
       )}
     </div>
   );

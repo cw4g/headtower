@@ -19,6 +19,11 @@ import {
 import { COMMAND_EVENT } from "@/components/console-top-bar";
 import { Kbd } from "@/components/ui/kbd";
 import { cn } from "@/lib/cn";
+// Type-only: erased at build, so the rbac server-only guard never runs here.
+import type { Capability } from "@/lib/rbac";
+
+/** Plain capability booleans passed from the server; absent means "no". */
+export type CapabilityMap = Partial<Record<Capability, boolean>>;
 
 interface CommandItem {
   id: string;
@@ -28,6 +33,8 @@ interface CommandItem {
   section: string;
   /** Extra terms that should match this command even when not in the label. */
   keywords?: string[];
+  /** Capability required to surface this target; omitted means always shown. */
+  capability?: Capability;
 }
 
 /**
@@ -50,6 +57,7 @@ const COMMANDS: CommandItem[] = [
     icon: Server,
     section: "Navigate",
     keywords: ["nodes", "devices", "hosts"],
+    capability: "machines.read",
   },
   {
     id: "users",
@@ -58,6 +66,7 @@ const COMMANDS: CommandItem[] = [
     icon: Users,
     section: "Navigate",
     keywords: ["people", "accounts", "directory"],
+    capability: "users.read",
   },
   {
     id: "access",
@@ -66,6 +75,7 @@ const COMMANDS: CommandItem[] = [
     icon: Shield,
     section: "Navigate",
     keywords: ["acl", "policy", "rules", "ssh"],
+    capability: "acls.read",
   },
   {
     id: "routes",
@@ -74,6 +84,7 @@ const COMMANDS: CommandItem[] = [
     icon: Route,
     section: "Navigate",
     keywords: ["subnets", "exit nodes", "advertised"],
+    capability: "routes.read",
   },
   {
     id: "pre-auth-keys",
@@ -82,6 +93,7 @@ const COMMANDS: CommandItem[] = [
     icon: KeyRound,
     section: "Settings",
     keywords: ["preauth", "enrolment", "enrollment", "tokens", "keys"],
+    capability: "keys.read",
   },
   {
     id: "api-keys",
@@ -90,6 +102,7 @@ const COMMANDS: CommandItem[] = [
     icon: KeySquare,
     section: "Settings",
     keywords: ["api", "tokens", "credentials", "keys"],
+    capability: "keys.read",
   },
   {
     id: "diagnostics",
@@ -98,6 +111,7 @@ const COMMANDS: CommandItem[] = [
     icon: Activity,
     section: "Settings",
     keywords: ["health", "status", "version", "debug"],
+    capability: "settings.read",
   },
 ];
 
@@ -121,14 +135,35 @@ function fuzzyMatch(query: string, haystack: string): boolean {
  * window {@link COMMAND_EVENT} the top bar dispatches (and on Cmd/Ctrl-K itself),
  * fuzzy-filters the navigation commands, and routes on Enter or click. Mounted
  * once in the app layout; renders nothing until summoned.
+ *
+ * `capabilities` are resolved on the server and gate each target by the read
+ * capability of the section it jumps to, so a role never sees a destination it
+ * can't open. Absent (or absent for a given capability) is treated as allowed.
  */
-export function CommandPalette() {
+export function CommandPalette({
+  capabilities,
+}: {
+  capabilities?: CapabilityMap;
+}) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const [active, setActive] = React.useState(0);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const listRef = React.useRef<HTMLDivElement>(null);
+
+  // Drop targets the role can't read. With no map (e.g. unauthenticated render)
+  // every command is kept, matching the prior always-visible behaviour.
+  const available = React.useMemo(
+    () =>
+      COMMANDS.filter(
+        (command) =>
+          !command.capability ||
+          !capabilities ||
+          capabilities[command.capability] !== false,
+      ),
+    [capabilities],
+  );
 
   const openPalette = React.useCallback(() => {
     setQuery("");
@@ -165,8 +200,8 @@ export function CommandPalette() {
 
   const filtered = React.useMemo(() => {
     const q = normalize(query);
-    if (!q) return COMMANDS;
-    return COMMANDS.filter((command) =>
+    if (!q) return available;
+    return available.filter((command) =>
       fuzzyMatch(
         q,
         normalize(
@@ -174,7 +209,7 @@ export function CommandPalette() {
         ),
       ),
     );
-  }, [query]);
+  }, [query, available]);
 
   // Keep the active row in view as the cursor walks past the scroll edges.
   React.useEffect(() => {

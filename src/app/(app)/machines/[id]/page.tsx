@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { nodes as nodesApi, HeadscaleRequestError } from "@/lib/headscale";
 import type { Node } from "@/lib/headscale";
+import { sessionCan } from "@/lib/authz";
 import {
   toNodeView,
   nodeDot,
@@ -50,6 +51,10 @@ export default async function MachineDetailPage({
     error = err;
   }
 
+  // Day-to-day device ops are gated on machines.write; read-only roles see the
+  // detail without the mutating Actions panel.
+  const canManage = await sessionCan("machines.write");
+
   return (
     <div className="flex flex-col gap-6">
       <Link
@@ -63,13 +68,13 @@ export default async function MachineDetailPage({
       {error ? (
         <ConnectionError error={error} />
       ) : node ? (
-        <MachineDetail node={node} />
+        <MachineDetail node={node} canManage={canManage} />
       ) : null}
     </div>
   );
 }
 
-function MachineDetail({ node }: { node: Node }) {
+function MachineDetail({ node, canManage }: { node: Node; canManage: boolean }) {
   const now = nowMs();
   const view = toNodeView(node, now);
   const dot = nodeDot(view);
@@ -86,18 +91,20 @@ function MachineDetail({ node }: { node: Node }) {
         </div>
 
         <div className="flex flex-col gap-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Actions</CardTitle>
-            </CardHeader>
-            <CardBody>
-              <NodeActions
-                nodeId={view.id}
-                name={view.name}
-                tags={view.tags}
-              />
-            </CardBody>
-          </Card>
+          {canManage && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Actions</CardTitle>
+              </CardHeader>
+              <CardBody>
+                <NodeActions
+                  nodeId={view.id}
+                  name={view.name}
+                  tags={view.tags}
+                />
+              </CardBody>
+            </Card>
+          )}
 
           <TimelineCard view={view} now={now} />
         </div>

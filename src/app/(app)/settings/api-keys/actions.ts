@@ -10,6 +10,7 @@
 
 import { revalidatePath } from "next/cache";
 import { apiKeys } from "@/lib/headscale";
+import { audit, authorize } from "@/lib/authz";
 import { describeHeadscaleError } from "../errors";
 import { API_KEY_PRESETS, resolveExpiry } from "../expiry-presets";
 import { isCurrentApiKey } from "./current-key";
@@ -32,6 +33,11 @@ export async function createApiKey(
   _prev: CreateApiKeyState,
   formData: FormData,
 ): Promise<CreateApiKeyState> {
+  const gate = await authorize("keys.write");
+  if (!gate.ok) {
+    return { status: "error", error: gate.reason };
+  }
+
   const expiryId = readString(formData, "expiry");
   const expiration = resolveExpiry(API_KEY_PRESETS, expiryId);
   if (expiration === null || expiration === undefined) {
@@ -41,6 +47,11 @@ export async function createApiKey(
 
   try {
     const secret = await apiKeys.create({ expiration });
+    await audit(gate.session, {
+      action: "apikey.create",
+      targetType: "apikey",
+      detail: { expiry: expiryId },
+    });
     revalidatePath(PATH);
     return { status: "success", secret };
   } catch (err) {
@@ -50,6 +61,10 @@ export async function createApiKey(
 
 /** Expire an API key by prefix. Refuses the current session's own key. */
 export async function expireApiKey(prefix: string): Promise<ApiKeyActionState> {
+  const gate = await authorize("keys.write");
+  if (!gate.ok) {
+    return { status: "error", error: gate.reason };
+  }
   if (isCurrentApiKey(prefix)) {
     return {
       status: "error",
@@ -58,6 +73,12 @@ export async function expireApiKey(prefix: string): Promise<ApiKeyActionState> {
   }
   try {
     await apiKeys.expire(prefix);
+    await audit(gate.session, {
+      action: "apikey.expire",
+      targetType: "apikey",
+      targetId: prefix,
+      targetName: prefix,
+    });
     revalidatePath(PATH);
     return { status: "success" };
   } catch (err) {
@@ -67,6 +88,10 @@ export async function expireApiKey(prefix: string): Promise<ApiKeyActionState> {
 
 /** Delete an API key by prefix. Refuses the current session's own key. */
 export async function deleteApiKey(prefix: string): Promise<ApiKeyActionState> {
+  const gate = await authorize("keys.write");
+  if (!gate.ok) {
+    return { status: "error", error: gate.reason };
+  }
   if (isCurrentApiKey(prefix)) {
     return {
       status: "error",
@@ -75,6 +100,12 @@ export async function deleteApiKey(prefix: string): Promise<ApiKeyActionState> {
   }
   try {
     await apiKeys.remove(prefix);
+    await audit(gate.session, {
+      action: "apikey.delete",
+      targetType: "apikey",
+      targetId: prefix,
+      targetName: prefix,
+    });
     revalidatePath(PATH);
     return { status: "success" };
   } catch (err) {

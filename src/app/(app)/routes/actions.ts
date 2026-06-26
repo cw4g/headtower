@@ -11,6 +11,7 @@
 import { revalidatePath } from "next/cache";
 import { routes } from "@/lib/headscale";
 import { isDefaultRoute } from "@/lib/routes";
+import { audit, authorize } from "@/lib/authz";
 import { describeHeadscaleError } from "./errors";
 
 /** Result of a route mutation, surfaced inline on the row that triggered it. */
@@ -34,6 +35,11 @@ export async function setRouteApproval(
     return { status: "error", error: "Missing node or route." };
   }
 
+  const gate = await authorize("routes.write");
+  if (!gate.ok) {
+    return { status: "error", error: gate.reason };
+  }
+
   try {
     if (approve) {
       await routes.approve(nodeId, cidr);
@@ -44,6 +50,12 @@ export async function setRouteApproval(
     return { status: "error", error: describeHeadscaleError(err) };
   }
 
+  await audit(gate.session, {
+    action: approve ? "routes.approve" : "routes.revoke",
+    targetType: "node",
+    targetId: nodeId,
+    detail: { cidr },
+  });
   revalidatePath("/routes");
   return { status: "success" };
 }
@@ -62,6 +74,11 @@ export async function setExitApproval(
     return { status: "error", error: "Missing node." };
   }
 
+  const gate = await authorize("routes.write");
+  if (!gate.ok) {
+    return { status: "error", error: gate.reason };
+  }
+
   try {
     const state = await routes.forNode(nodeId);
     const next = approve
@@ -77,6 +94,12 @@ export async function setExitApproval(
     return { status: "error", error: describeHeadscaleError(err) };
   }
 
+  await audit(gate.session, {
+    action: approve ? "routes.approve" : "routes.revoke",
+    targetType: "node",
+    targetId: nodeId,
+    detail: { exit: true },
+  });
   revalidatePath("/routes");
   return { status: "success" };
 }

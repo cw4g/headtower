@@ -4,6 +4,7 @@ import {
   policy as policyApi,
   type Policy,
 } from "@/lib/headscale";
+import { sessionCan } from "@/lib/authz";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { Chip } from "@/components/ui/chip";
 import { ConnectionError } from "@/components/machines/connection-error";
@@ -36,6 +37,8 @@ export default async function AccessPage() {
 
   const document = doc?.policy ?? "";
   const unset = !error && document.trim() === "";
+  // Saving the policy requires acls.write; read-only roles get a view-only editor.
+  const canSave = await sessionCan("acls.write");
 
   return (
     <div className="flex flex-col gap-6">
@@ -63,6 +66,7 @@ export default async function AccessPage() {
           initialDocument={document}
           initialUpdatedAt={doc?.updatedAt ?? null}
           unset={unset}
+          canSave={canSave}
         />
       )}
     </div>

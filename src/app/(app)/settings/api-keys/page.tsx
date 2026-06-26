@@ -1,5 +1,6 @@
 import { KeySquare } from "lucide-react";
 import { apiKeys as apiKeysApi, type ApiKey } from "@/lib/headscale";
+import { sessionCan } from "@/lib/authz";
 import { Card } from "@/components/ui/card";
 import { Chip } from "@/components/ui/chip";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -38,6 +39,8 @@ export default async function ApiKeysPage() {
     return bt - at; // Newest first.
   });
   const now = nowMs();
+  // Minting and expiring/deleting keys both require keys.write.
+  const canManage = await sessionCan("keys.write");
 
   return (
     <div className="flex flex-col gap-5">
@@ -51,7 +54,7 @@ export default async function ApiKeysPage() {
             control-plane access.
           </p>
         </div>
-        {!error && list.length > 0 && <CreateApiKeyDialog />}
+        {!error && list.length > 0 && canManage && <CreateApiKeyDialog />}
       </div>
 
       {error ? (
@@ -65,7 +68,7 @@ export default async function ApiKeysPage() {
           icon={KeySquare}
           title="No API keys"
           description="Mint a key to authenticate against the Headscale admin API. The secret is shown once at creation."
-          action={<CreateApiKeyDialog />}
+          action={canManage ? <CreateApiKeyDialog /> : undefined}
         />
       ) : (
         <Card>
@@ -89,6 +92,7 @@ export default async function ApiKeysPage() {
                   entry={key}
                   current={isCurrentApiKey(key.prefix)}
                   now={now}
+                  canManage={canManage}
                 />
               ))}
             </TableBody>
@@ -103,10 +107,12 @@ function ApiKeyRow({
   entry,
   current,
   now,
+  canManage,
 }: {
   entry: ApiKey;
   current: boolean;
   now: number;
+  canManage: boolean;
 }) {
   const expiry = describeExpiry(entry.expiration, now);
   const expired = expiry.state === "expired";
@@ -149,8 +155,10 @@ function ApiKeyRow({
             <span className="pr-1 text-xs text-ink-faint" title="Protected: in use by Headtower">
               protected
             </span>
-          ) : (
+          ) : canManage ? (
             <ApiKeyActions prefix={entry.prefix} expired={expired} />
+          ) : (
+            <span className="pr-1 text-xs text-ink-faint">—</span>
           )}
         </div>
       </Td>

@@ -50,17 +50,30 @@ const STATE_META: Record<
 };
 
 /** The Routes view body: one schematic card per node carrying routes. */
-export function RoutesBoard({ groups }: { groups: RouteGroup[] }) {
+export function RoutesBoard({
+  groups,
+  canManage,
+}: {
+  groups: RouteGroup[];
+  /** When false, rows are read-only: state is shown but no approve/revoke. */
+  canManage: boolean;
+}) {
   return (
     <div className="flex flex-col gap-4">
       {groups.map((group) => (
-        <NodeRouteCard key={group.nodeId} group={group} />
+        <NodeRouteCard key={group.nodeId} group={group} canManage={canManage} />
       ))}
     </div>
   );
 }
 
-function NodeRouteCard({ group }: { group: RouteGroup }) {
+function NodeRouteCard({
+  group,
+  canManage,
+}: {
+  group: RouteGroup;
+  canManage: boolean;
+}) {
   return (
     <Card>
       <CardHeader>
@@ -100,7 +113,11 @@ function NodeRouteCard({ group }: { group: RouteGroup }) {
         </TableHead>
         <TableBody>
           {group.exit.state && (
-            <ExitRow nodeId={group.nodeId} exit={group.exit} />
+            <ExitRow
+              nodeId={group.nodeId}
+              exit={group.exit}
+              canManage={canManage}
+            />
           )}
           {group.subnet.map((route) => (
             <SubnetRow
@@ -108,6 +125,7 @@ function NodeRouteCard({ group }: { group: RouteGroup }) {
               nodeId={group.nodeId}
               cidr={route.cidr}
               state={route.state}
+              canManage={canManage}
             />
           ))}
         </TableBody>
@@ -120,10 +138,12 @@ function SubnetRow({
   nodeId,
   cidr,
   state,
+  canManage,
 }: {
   nodeId: string;
   cidr: string;
   state: RouteState;
+  canManage: boolean;
 }) {
   const pending = state === "pending";
   return (
@@ -132,13 +152,22 @@ function SubnetRow({
       typeIcon={Network}
       typeLabel="Subnet"
       state={state}
+      canManage={canManage}
       // A pending route's button approves it; any approved route's button revokes.
       run={() => setRouteApproval(nodeId, cidr, pending)}
     />
   );
 }
 
-function ExitRow({ nodeId, exit }: { nodeId: string; exit: ExitStatus }) {
+function ExitRow({
+  nodeId,
+  exit,
+  canManage,
+}: {
+  nodeId: string;
+  exit: ExitStatus;
+  canManage: boolean;
+}) {
   // The card only renders this row when `exit.state` is set.
   const state = exit.state as RouteState;
   const pending = state === "pending";
@@ -148,6 +177,7 @@ function ExitRow({ nodeId, exit }: { nodeId: string; exit: ExitStatus }) {
       typeIcon={Antenna}
       typeLabel="Exit"
       state={state}
+      canManage={canManage}
       run={() => setExitApproval(nodeId, pending)}
     />
   );
@@ -158,12 +188,14 @@ function RouteRow({
   typeIcon: TypeIcon,
   typeLabel,
   state,
+  canManage,
   run,
 }: {
   cidr: string;
   typeIcon: LucideIcon;
   typeLabel: string;
   state: RouteState;
+  canManage: boolean;
   run: () => Promise<RouteActionState>;
 }) {
   const [pending, startTransition] = useTransition();
@@ -203,26 +235,30 @@ function RouteRow({
           </span>
         </Td>
         <Td className="pr-4" align="right">
-          <Button
-            size="sm"
-            variant={approve ? "outline" : "ghost"}
-            onClick={onClick}
-            disabled={pending}
-            className={cn(!approve && "text-ink-muted hover:text-warn-500")}
-          >
-            {approve ? (
-              <Check className="h-3.5 w-3.5" aria-hidden />
-            ) : (
-              <RotateCcw className="h-3.5 w-3.5" aria-hidden />
-            )}
-            {pending
-              ? approve
-                ? "Approving…"
-                : "Revoking…"
-              : approve
-                ? "Approve"
-                : "Revoke"}
-          </Button>
+          {canManage ? (
+            <Button
+              size="sm"
+              variant={approve ? "outline" : "ghost"}
+              onClick={onClick}
+              disabled={pending}
+              className={cn(!approve && "text-ink-muted hover:text-warn-500")}
+            >
+              {approve ? (
+                <Check className="h-3.5 w-3.5" aria-hidden />
+              ) : (
+                <RotateCcw className="h-3.5 w-3.5" aria-hidden />
+              )}
+              {pending
+                ? approve
+                  ? "Approving…"
+                  : "Revoking…"
+                : approve
+                  ? "Approve"
+                  : "Revoke"}
+            </Button>
+          ) : (
+            <span className="text-xs text-ink-faint">—</span>
+          )}
         </Td>
       </Tr>
       {error && (

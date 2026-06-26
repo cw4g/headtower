@@ -6,6 +6,7 @@ import {
   type PreAuthKey,
   type User,
 } from "@/lib/headscale";
+import { sessionCan } from "@/lib/authz";
 import { Card } from "@/components/ui/card";
 import { Chip, Tag } from "@/components/ui/chip";
 import { CopyButton } from "@/components/ui/copy-button";
@@ -80,6 +81,8 @@ export default async function PreAuthKeysPage() {
   }));
   const hasUsers = users.length > 0;
   const now = nowMs();
+  // Minting and expiring pre-auth keys both require keys.write.
+  const canManage = await sessionCan("keys.write");
 
   return (
     <div className="flex flex-col gap-5">
@@ -92,7 +95,7 @@ export default async function PreAuthKeysPage() {
             Tokens that enrol nodes against a user without an interactive login.
           </p>
         </div>
-        {!error && hasUsers && keys.length > 0 && (
+        {!error && hasUsers && keys.length > 0 && canManage && (
           <CreatePreAuthKeyDialog users={userOptions} />
         )}
       </div>
@@ -122,7 +125,9 @@ export default async function PreAuthKeysPage() {
           icon={KeyRound}
           title="No pre-auth keys"
           description="Mint a key to enrol nodes non-interactively with `tailscale up --authkey`."
-          action={<CreatePreAuthKeyDialog users={userOptions} />}
+          action={
+            canManage ? <CreatePreAuthKeyDialog users={userOptions} /> : undefined
+          }
         />
       ) : (
         <Card>
@@ -141,7 +146,12 @@ export default async function PreAuthKeysPage() {
             </TableHead>
             <TableBody>
               {keys.map((key) => (
-                <PreAuthKeyRow key={key.id} entry={key} now={now} />
+                <PreAuthKeyRow
+                  key={key.id}
+                  entry={key}
+                  now={now}
+                  canManage={canManage}
+                />
               ))}
             </TableBody>
           </Table>
@@ -151,7 +161,15 @@ export default async function PreAuthKeysPage() {
   );
 }
 
-function PreAuthKeyRow({ entry, now }: { entry: PreAuthKey; now: number }) {
+function PreAuthKeyRow({
+  entry,
+  now,
+  canManage,
+}: {
+  entry: PreAuthKey;
+  now: number;
+  canManage: boolean;
+}) {
   const expiry = describeExpiry(entry.expiration, now);
   const expired = expiry.state === "expired";
   const created = formatDate(entry.createdAt);
@@ -197,12 +215,16 @@ function PreAuthKeyRow({ entry, now }: { entry: PreAuthKey; now: number }) {
 
       <Td className="pr-4 text-right">
         <div className="flex justify-end">
-          <PreAuthKeyActions
-            id={entry.id}
-            user={entry.user?.id ?? ""}
-            keyValue={entry.key ?? ""}
-            expired={expired}
-          />
+          {canManage ? (
+            <PreAuthKeyActions
+              id={entry.id}
+              user={entry.user?.id ?? ""}
+              keyValue={entry.key ?? ""}
+              expired={expired}
+            />
+          ) : (
+            <span className="pr-1 text-xs text-ink-faint">—</span>
+          )}
         </div>
       </Td>
     </Tr>

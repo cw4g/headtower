@@ -1,5 +1,6 @@
 import { TriangleAlert, UsersRound } from "lucide-react";
 import { nodes, users, type User } from "@/lib/headscale";
+import { sessionCan } from "@/lib/authz";
 import { Card } from "@/components/ui/card";
 import { Chip } from "@/components/ui/chip";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -57,6 +58,8 @@ export default async function UsersPage() {
 
   const list = data?.list ?? [];
   const nodeCounts = data?.nodeCounts ?? null;
+  // Only roles with users.write may create users; hide the affordance otherwise.
+  const canCreate = await sessionCan("users.write");
 
   return (
     <div className="flex flex-col gap-6">
@@ -74,7 +77,7 @@ export default async function UsersPage() {
         }
         description="People and service accounts that own nodes in the tailnet."
       >
-        {!error && list.length > 0 && <AddUserDialog />}
+        {!error && list.length > 0 && canCreate && <AddUserDialog />}
       </SectionHeading>
 
       {error ? (
@@ -84,7 +87,7 @@ export default async function UsersPage() {
           icon={UsersRound}
           title="No users yet"
           description="Create a user, then enrol nodes against it with a pre-auth key or interactive login."
-          action={<AddUserDialog />}
+          action={canCreate ? <AddUserDialog /> : undefined}
         />
       ) : (
         <Card>

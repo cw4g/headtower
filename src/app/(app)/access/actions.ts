@@ -12,6 +12,7 @@
 
 import { revalidatePath } from "next/cache";
 import { policy } from "@/lib/headscale";
+import { audit, authorize } from "@/lib/authz";
 import { describeHeadscaleError } from "./errors";
 
 /** Result of {@link savePolicy}, shaped for the client editor. */
@@ -29,6 +30,11 @@ export async function savePolicy(document: string): Promise<SavePolicyState> {
     return { status: "error", error: "The policy document is empty." };
   }
 
+  const gate = await authorize("acls.write");
+  if (!gate.ok) {
+    return { status: "error", error: gate.reason };
+  }
+
   let updatedAt: string | null = null;
   try {
     const saved = await policy.set(document);
@@ -37,6 +43,11 @@ export async function savePolicy(document: string): Promise<SavePolicyState> {
     return { status: "error", error: describeHeadscaleError(err) };
   }
 
+  await audit(gate.session, {
+    action: "acl.save",
+    targetType: "policy",
+    detail: { bytes: document.length, updatedAt },
+  });
   revalidatePath("/access");
   return { status: "success", updatedAt };
 }

@@ -10,6 +10,7 @@
 
 import { revalidatePath } from "next/cache";
 import { HeadscaleRequestError, preAuthKeys } from "@/lib/headscale";
+import { audit, authorize } from "@/lib/authz";
 import { describeHeadscaleError } from "../errors";
 import { PRE_AUTH_KEY_PRESETS, resolveExpiry } from "../expiry-presets";
 
@@ -31,6 +32,11 @@ export async function createPreAuthKey(
   _prev: CreatePreAuthKeyState,
   formData: FormData,
 ): Promise<CreatePreAuthKeyState> {
+  const gate = await authorize("keys.write");
+  if (!gate.ok) {
+    return { status: "error", error: gate.reason };
+  }
+
   const user = readString(formData, "user");
   if (!user) {
     return { status: "error", error: "Select the user this key enrols nodes for." };
@@ -52,6 +58,13 @@ export async function createPreAuthKey(
       ephemeral,
       expiration,
     });
+    await audit(gate.session, {
+      action: "preauthkey.create",
+      targetType: "preauthkey",
+      targetId: created.id,
+      targetName: user,
+      detail: { user, reusable, ephemeral },
+    });
     revalidatePath(PATH);
     return { status: "success", key: created.key, id: created.id };
   } catch (err) {
@@ -70,6 +83,11 @@ export async function expirePreAuthKey(input: {
   user: string;
   key: string;
 }): Promise<PreAuthKeyActionState> {
+  const gate = await authorize("keys.write");
+  if (!gate.ok) {
+    return { status: "error", error: gate.reason };
+  }
+
   try {
     try {
       await preAuthKeys.expire({ id: input.id });
@@ -80,6 +98,12 @@ export async function expirePreAuthKey(input: {
         throw err;
       }
     }
+    await audit(gate.session, {
+      action: "preauthkey.expire",
+      targetType: "preauthkey",
+      targetId: input.id,
+      targetName: input.user || null,
+    });
     revalidatePath(PATH);
     return { status: "success" };
   } catch (err) {

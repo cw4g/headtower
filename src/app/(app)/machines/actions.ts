@@ -11,6 +11,7 @@
 
 import { revalidatePath } from "next/cache";
 import { nodes } from "@/lib/headscale";
+import { audit, authorize } from "@/lib/authz";
 import { describeHeadscaleError } from "./errors";
 
 /** Outcome of a node mutation, shaped for the dialog's inline error handling. */
@@ -35,6 +36,11 @@ export async function renameNode(
   id: string,
   name: string,
 ): Promise<NodeActionResult> {
+  const gate = await authorize("machines.write");
+  if (!gate.ok) {
+    return { status: "error", error: gate.reason };
+  }
+
   const trimmed = name.trim();
   if (!trimmed) {
     return { status: "error", error: "Enter a display name." };
@@ -49,6 +55,13 @@ export async function renameNode(
     return { status: "error", error: describeHeadscaleError(err) };
   }
 
+  await audit(gate.session, {
+    action: "node.rename",
+    targetType: "node",
+    targetId: id,
+    targetName: trimmed,
+    detail: { name: trimmed },
+  });
   revalidateNode(id);
   return { status: "success" };
 }
@@ -61,6 +74,11 @@ export async function setNodeTags(
   id: string,
   tags: string[],
 ): Promise<NodeActionResult> {
+  const gate = await authorize("machines.write");
+  if (!gate.ok) {
+    return { status: "error", error: gate.reason };
+  }
+
   // Normalise: trim, drop blanks, dedupe while preserving order.
   const seen = new Set<string>();
   const clean: string[] = [];
@@ -81,30 +99,56 @@ export async function setNodeTags(
     return { status: "error", error: describeHeadscaleError(err) };
   }
 
+  await audit(gate.session, {
+    action: "node.setTags",
+    targetType: "node",
+    targetId: id,
+    detail: { tags: clean },
+  });
   revalidateNode(id);
   return { status: "success" };
 }
 
 /** Expire a node's key immediately, forcing it to re-authenticate. */
 export async function expireNode(id: string): Promise<NodeActionResult> {
+  const gate = await authorize("machines.write");
+  if (!gate.ok) {
+    return { status: "error", error: gate.reason };
+  }
+
   try {
     await nodes.expire(id);
   } catch (err) {
     return { status: "error", error: describeHeadscaleError(err) };
   }
 
+  await audit(gate.session, {
+    action: "node.expire",
+    targetType: "node",
+    targetId: id,
+  });
   revalidateNode(id);
   return { status: "success" };
 }
 
 /** Permanently remove a node from the tailnet. */
 export async function deleteNode(id: string): Promise<NodeActionResult> {
+  const gate = await authorize("machines.write");
+  if (!gate.ok) {
+    return { status: "error", error: gate.reason };
+  }
+
   try {
     await nodes.remove(id);
   } catch (err) {
     return { status: "error", error: describeHeadscaleError(err) };
   }
 
+  await audit(gate.session, {
+    action: "node.delete",
+    targetType: "node",
+    targetId: id,
+  });
   // The node is gone: refresh the list and drop the now-dead detail path.
   revalidateNode(id);
   return { status: "success" };

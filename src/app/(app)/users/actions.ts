@@ -9,6 +9,7 @@
 
 import { revalidatePath } from "next/cache";
 import { users } from "@/lib/headscale";
+import { audit, authorize } from "@/lib/authz";
 import { describeHeadscaleError } from "./errors";
 
 /** Result of {@link createUser}, shaped for React's `useActionState`. */
@@ -27,6 +28,11 @@ export async function createUser(
   _prev: CreateUserState,
   formData: FormData,
 ): Promise<CreateUserState> {
+  const gate = await authorize("users.write");
+  if (!gate.ok) {
+    return { status: "error", error: gate.reason };
+  }
+
   const raw = formData.get("name");
   const name = typeof raw === "string" ? raw.trim() : "";
 
@@ -44,7 +50,13 @@ export async function createUser(
   }
 
   try {
-    await users.create({ name });
+    const created = await users.create({ name });
+    await audit(gate.session, {
+      action: "user.create",
+      targetType: "user",
+      targetId: created.id,
+      targetName: created.name,
+    });
   } catch (err) {
     return { status: "error", error: describeHeadscaleError(err) };
   }

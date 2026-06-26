@@ -17,6 +17,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { BeaconMark } from "@/components/beacon-mark";
+import { AccountMenu, type Account } from "@/components/account-menu";
 import { Kbd } from "@/components/ui/kbd";
 import {
   DropdownMenu,
@@ -54,7 +55,7 @@ function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(href + "/");
 }
 
-export function ConsoleTopBar() {
+export function ConsoleTopBar({ account }: { account?: Account | null }) {
   const pathname = usePathname() ?? "";
 
   const openCommand = React.useCallback(() => {
@@ -134,6 +135,8 @@ export function ConsoleTopBar() {
             <span className="data hidden text-xs text-ink-faint sm:inline">
               {APP_VERSION}
             </span>
+
+            {account && <AccountMenu account={account} />}
 
             <div className="lg:hidden">
               <DropdownMenu>
