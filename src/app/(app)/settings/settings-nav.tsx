@@ -6,11 +6,13 @@ import { usePathname } from "next/navigation";
 import {
   Activity,
   Cpu,
+  Database,
   KeyRound,
   KeySquare,
   PlugZap,
   ShieldCheck,
   Users,
+  UsersRound,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -56,6 +58,12 @@ const GROUPS: SettingsNavGroup[] = [
     label: "Access",
     items: [
       {
+        label: "Members",
+        href: "/settings/members",
+        icon: UsersRound,
+        description: "Accounts + roles",
+      },
+      {
         label: "Pre-auth keys",
         href: "/settings/pre-auth-keys",
         icon: KeyRound,
@@ -83,6 +91,12 @@ const GROUPS: SettingsNavGroup[] = [
         href: "/settings/agent",
         icon: Cpu,
         description: "Sidecar + browser SSH",
+      },
+      {
+        label: "Database",
+        href: "/settings/database",
+        icon: Database,
+        description: "Full backup export",
       },
     ],
   },

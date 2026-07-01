@@ -16,10 +16,16 @@
  * Both segments are UNPADDED base64url (Node's `"base64url"` buffer encoding
  * already omits padding). The HMAC is computed over the exact payload bytes
  * that were encoded into the first segment.
+ *
+ * A successful mint also records a session-start row via `recordSshSession`
+ * (see `@/lib/ssh-sessions`) - who, which host, which SSH user, when. It's a
+ * proxy for "a session started", not a full transcript: this function knows
+ * nothing about whether the shell actually connects, or when it ends.
  */
 
 import { createHmac } from "node:crypto";
-import { audit, authorize } from "@/lib/authz";
+import { audit, authorize, actorLabel } from "@/lib/authz";
+import { recordSshSession } from "@/lib/ssh-sessions";
 
 /** Token validity window. Long enough to open the socket, short enough to
  *  make a leaked token (e.g. in a proxy access log) low-value. */
@@ -78,6 +84,16 @@ export async function mintSshToken(
     targetType: "node",
     targetName: `${trimmedUser}@${trimmedHost}`,
     detail: { host: trimmedHost, user: trimmedUser },
+  });
+
+  // Session-start metadata, distinct from the audit entry above: a smaller,
+  // purpose-built record meant to answer "who connected to what, when" at a
+  // glance (see @/lib/ssh-sessions), rather than being read out of the
+  // general operator action trail. Same non-blocking guarantee as `audit()`.
+  await recordSshSession({
+    actor: actorLabel(gate.session),
+    deviceName: trimmedHost,
+    sshUser: trimmedUser,
   });
 
   const basePath = process.env.HEADTOWER_BASE_PATH?.trim() || "";

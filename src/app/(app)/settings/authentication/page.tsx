@@ -1,4 +1,5 @@
-import { getConfig, getRawSetting, SETTING_KEYS } from "@/lib/config";
+import { isOidcEnabled } from "@/lib/auth/oidc";
+import { listProviders } from "@/lib/auth/oidc-providers";
 import { sessionCan } from "@/lib/authz";
 import { AuthenticationForm } from "./authentication-form";
 import { sessionSecretState } from "./session-secret";
@@ -7,33 +8,16 @@ import { sessionSecretState } from "./session-secret";
 export const dynamic = "force-dynamic";
 
 /**
- * Edit how operators sign in: operator (no sign-in) or OIDC single sign-on.
- * Reads the effective config server-side and passes the form only non-secret
- * facts - issuer, client id, and whether a client secret is stored - plus the
- * env-only session-secret state that gates enabling OIDC. The secret is never
- * sent to the browser.
+ * Whether the console requires sign-in at all - operator mode (none) or
+ * single sign-on (at least one enabled identity provider). WHICH providers
+ * are available is Settings > Identity providers' job, not this page's; this
+ * is purely the on/off switch, plus the env-only session-secret state that
+ * gates turning it on.
  */
 export default async function AuthenticationPage() {
-  const config = getConfig();
   const canWrite = await sessionCan("settings.write");
-
-  const initialMode = config.oidc ? "oidc" : "operator";
-
-  // Prefill issuer/id even when OIDC is only partially configured, so an
-  // interrupted setup is easy to finish. Both are public (non-secret) values.
-  const issuer =
-    config.oidc?.issuer ??
-    getRawSetting(SETTING_KEYS.oidcIssuer) ??
-    process.env.HEADTOWER_OIDC_ISSUER?.trim() ??
-    "";
-  const clientId =
-    config.oidc?.clientId ??
-    getRawSetting(SETTING_KEYS.oidcClientId) ??
-    process.env.HEADTOWER_OIDC_CLIENT_ID?.trim() ??
-    "";
-  const secretStored =
-    getRawSetting(SETTING_KEYS.oidcClientSecret) != null ||
-    Boolean(process.env.HEADTOWER_OIDC_CLIENT_SECRET?.trim());
+  const initialMode = isOidcEnabled() ? "oidc" : "operator";
+  const hasProviders = listProviders().length > 0;
 
   return (
     <div className="flex flex-col gap-5">
@@ -43,16 +27,14 @@ export default async function AuthenticationPage() {
         </h2>
         <p className="text-sm text-ink-muted">
           How operators sign in to the console. Switch between single-operator
-          access and OIDC single sign-on. Changes apply immediately.
+          access and single sign-on - manage which providers can sign you in
+          under Identity providers. Changes apply immediately.
         </p>
       </div>
 
       <AuthenticationForm
         initialMode={initialMode}
-        issuer={issuer}
-        clientId={clientId}
-        secretStored={secretStored}
-        source={config.sources.oidc}
+        hasProviders={hasProviders}
         sessionSecret={sessionSecretState()}
         canWrite={canWrite}
       />

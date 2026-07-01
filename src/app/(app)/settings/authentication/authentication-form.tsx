@@ -1,89 +1,29 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import {
   Check,
   CheckCircle2,
-  Eye,
-  EyeOff,
   KeyRound,
   Loader2,
-  Pencil,
   ShieldCheck,
   TriangleAlert,
-  X,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Chip } from "@/components/ui/chip";
-import { Field, Input } from "@/components/ui/field";
 import { StatusDot } from "@/components/ui/status-dot";
 import { cn } from "@/lib/cn";
-import { saveAuthentication, type SaveAuthInput } from "./actions";
+import { saveAuthentication } from "./actions";
 import type { SessionSecretState } from "./session-secret";
 
 type Mode = "operator" | "oidc";
 
-interface ProviderPreset {
-  id: string;
-  label: string;
-  /** Issuer URL to prefill. Blank leaves the field empty for the user to fill in. */
-  issuer: string;
-  /** Shown under the Issuer field once this preset is selected. */
-  hint?: string;
-}
-
-/**
- * Common identity providers, OIDC-discovery compatible only (so no GitHub,
- * which is OAuth2 without an OIDC discovery document). Selecting one only
- * prefills the Issuer field below - it never touches client id or secret.
- */
-const PROVIDER_PRESETS: ProviderPreset[] = [
-  { id: "google", label: "Google", issuer: "https://accounts.google.com" },
-  {
-    id: "entra",
-    label: "Microsoft Entra",
-    issuer: "https://login.microsoftonline.com/<tenant>/v2.0",
-    hint: 'Replace <tenant> with your Entra tenant ID, or "common" for multi-tenant apps.',
-  },
-  {
-    id: "okta",
-    label: "Okta",
-    issuer: "https://YOUR_DOMAIN.okta.com",
-    hint: "Replace YOUR_DOMAIN with your Okta org domain.",
-  },
-  {
-    id: "auth0",
-    label: "Auth0",
-    issuer: "https://YOUR_TENANT.auth0.com",
-    hint: "Replace YOUR_TENANT with your Auth0 tenant.",
-  },
-  {
-    id: "pocket-id",
-    label: "Pocket ID",
-    issuer: "",
-    hint: "Self-hosted. Enter your Pocket ID instance's URL, e.g. https://id.example.com.",
-  },
-  { id: "generic", label: "Generic OIDC", issuer: "" },
-];
-
-/** The preset whose issuer exactly matches, if any - used to highlight on load. */
-function matchingPreset(issuer: string): string | null {
-  const trimmed = issuer.trim();
-  if (!trimmed) return null;
-  return PROVIDER_PRESETS.find((p) => p.issuer !== "" && p.issuer === trimmed)?.id ?? null;
-}
-
 export interface AuthenticationFormProps {
   /** The identity model currently in effect. */
   initialMode: Mode;
-  /** Prefilled OIDC issuer + client id (both non-secret). */
-  issuer: string;
-  clientId: string;
-  /** Whether a client secret is stored (never the secret itself). */
-  secretStored: boolean;
-  /** Where OIDC resolves from when configured. */
-  source: "db" | "env" | "none";
+  /** Whether at least one identity provider is configured (Settings > Identity providers). */
+  hasProviders: boolean;
   /** State of HEADTOWER_SESSION_SECRET (length only, never the value). */
   sessionSecret: SessionSecretState;
   /** Whether this session may change the identity model. */
@@ -91,79 +31,45 @@ export interface AuthenticationFormProps {
 }
 
 /**
- * Editable identity model: operator (no sign-in) or OIDC single sign-on. The
- * OIDC client secret is masked - a stored secret shows only as "set" with a
- * Rotate control, and the raw value never reaches the browser. Enabling OIDC is
- * blocked in the UI (and refused by the server) until the session secret is set,
- * so no one can strand themselves.
+ * The on/off switch for sign-in: operator mode (no sign-in) or single sign-on
+ * (at least one identity provider). WHICH providers exist is managed entirely
+ * on Settings > Identity providers - this page used to also hold a single
+ * provider's issuer/client id/secret, which meant the same concept lived in
+ * two places; that config now lives only there. Switching to operator mode
+ * turns every provider off; switching back turns every existing one back on
+ * (add one first if none exist yet). Blocked until HEADTOWER_SESSION_SECRET is
+ * set, since sign-in signs its cookie with it.
  */
 export function AuthenticationForm({
   initialMode,
-  issuer: initialIssuer,
-  clientId: initialClientId,
-  secretStored,
-  source,
+  hasProviders,
   sessionSecret,
   canWrite,
 }: AuthenticationFormProps) {
   const [mode, setMode] = React.useState<Mode>(initialMode);
-  const [issuer, setIssuer] = React.useState(initialIssuer);
-  const [issuerPreset, setIssuerPreset] = React.useState<string | null>(() =>
-    matchingPreset(initialIssuer),
-  );
-  const [clientId, setClientId] = React.useState(initialClientId);
-
-  const [changingSecret, setChangingSecret] = React.useState(!secretStored);
-  const [clientSecret, setClientSecret] = React.useState("");
-  const [reveal, setReveal] = React.useState(false);
-
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [saved, setSaved] = React.useState<Mode | null>(null);
 
-  const secretInputOpen = changingSecret;
-  const secretSatisfied = clientSecret.trim().length > 0 || secretStored;
   const sessionSecretOk = sessionSecret.status === "ok";
-  const issuerHint = PROVIDER_PRESETS.find((p) => p.id === issuerPreset)?.hint;
-
-  function selectPreset(preset: ProviderPreset) {
-    setIssuer(preset.issuer);
-    setIssuerPreset(preset.id);
-    reset();
-  }
-
-  const oidcComplete =
-    issuer.trim().length > 0 && clientId.trim().length > 0 && secretSatisfied;
+  const canEnableOidc = hasProviders && sessionSecretOk;
   const canSave =
-    canWrite &&
-    (mode === "operator" || (oidcComplete && sessionSecretOk));
+    canWrite && mode !== initialMode && (mode === "operator" || canEnableOidc);
 
-  function reset() {
+  function select(next: Mode) {
+    setMode(next);
     setError(null);
     setSaved(null);
   }
 
   async function onSave() {
     setSaving(true);
-    reset();
-    const payload: SaveAuthInput =
-      mode === "operator"
-        ? { mode: "operator" }
-        : {
-            mode: "oidc",
-            issuer: issuer.trim(),
-            clientId: clientId.trim(),
-            clientSecret: clientSecret.trim(),
-          };
+    setError(null);
+    setSaved(null);
     try {
-      const result = await saveAuthentication(payload);
+      const result = await saveAuthentication({ mode });
       if (result.status === "success") {
         setSaved(result.mode);
-        if (result.mode === "oidc") {
-          setClientSecret("");
-          setReveal(false);
-          setChangingSecret(false); // A secret is now stored; collapse back to "set".
-        }
       } else {
         setError(result.error);
       }
@@ -188,10 +94,7 @@ export function AuthenticationForm({
         <ChoiceCard
           selected={mode === "operator"}
           disabled={!canWrite}
-          onSelect={() => {
-            setMode("operator");
-            reset();
-          }}
+          onSelect={() => select("operator")}
           icon={KeyRound}
           title="Operator mode"
           description="No sign-in. Anyone who can reach the console controls the tailnet, with the default role."
@@ -199,176 +102,34 @@ export function AuthenticationForm({
         <ChoiceCard
           selected={mode === "oidc"}
           disabled={!canWrite}
-          onSelect={() => {
-            setMode("oidc");
-            reset();
-          }}
+          onSelect={() => select("oidc")}
           icon={ShieldCheck}
-          title="Single sign-on (OIDC)"
+          title="Single sign-on"
           description="Operators sign in through an identity provider. Per-account roles and a full audit trail."
         />
       </div>
 
-      {mode === "oidc" && (
-        <div className="flex flex-col gap-4 rounded-control border border-line bg-surface-2 p-4">
-          {source === "env" && (
-            <p className="flex items-start gap-2 text-xs text-ink-faint">
-              <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-              Some values are inherited from HEADTOWER_OIDC_* environment
-              variables. Saving here writes an override to the database.
-            </p>
-          )}
-
-          <Field label="Identity provider">
-            <div className="flex flex-wrap gap-1.5" role="group" aria-label="Identity provider preset">
-              {PROVIDER_PRESETS.map((preset) => {
-                const isActive = issuerPreset === preset.id;
-                return (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    disabled={!canWrite}
-                    aria-pressed={isActive}
-                    onClick={() => selectPreset(preset)}
-                    className={cn(
-                      "rounded-control border px-2.5 py-1 text-xs font-medium transition-colors",
-                      "disabled:pointer-events-none disabled:opacity-50",
-                      isActive
-                        ? "border-beacon-500 bg-beacon-500/10 text-beacon-500"
-                        : "border-line-strong bg-surface text-ink-muted hover:bg-surface-2 hover:text-ink",
-                    )}
-                  >
-                    {preset.label}
-                  </button>
-                );
-              })}
-            </div>
-          </Field>
-
-          <Field label="Issuer URL" htmlFor="oidc-issuer" description={issuerHint}>
-            <Input
-              id="oidc-issuer"
-              mono
-              value={issuer}
-              spellCheck={false}
-              autoComplete="off"
-              disabled={!canWrite}
-              placeholder="https://id.example.com"
-              onChange={(e) => {
-                setIssuer(e.target.value);
-                setIssuerPreset(matchingPreset(e.target.value));
-                reset();
-              }}
-            />
-          </Field>
-
-          <Field label="Client ID" htmlFor="oidc-cid">
-            <Input
-              id="oidc-cid"
-              mono
-              value={clientId}
-              spellCheck={false}
-              autoComplete="off"
-              disabled={!canWrite}
-              placeholder="headtower"
-              onChange={(e) => {
-                setClientId(e.target.value);
-                reset();
-              }}
-            />
-          </Field>
-
-          <Field
-            label="Client secret"
-            htmlFor="oidc-secret"
-            description={
-              secretInputOpen
-                ? "Stored encrypted when HEADTOWER_SECRET is set."
-                : undefined
-            }
+      {mode === "oidc" && !hasProviders && (
+        <p className="flex items-start gap-2 rounded-control border border-line bg-surface-2 px-3 py-2.5 text-xs text-ink-muted">
+          <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ink-faint" aria-hidden />
+          No identity provider is configured yet.{" "}
+          <Link
+            href="/settings/identity-providers"
+            className="font-medium text-beacon-500 transition-colors hover:text-beacon-400"
           >
-            {secretInputOpen ? (
-              <div className="flex flex-col gap-2">
-                <div className="relative">
-                  <Input
-                    id="oidc-secret"
-                    mono
-                    type={reveal ? "text" : "password"}
-                    value={clientSecret}
-                    spellCheck={false}
-                    autoComplete="off"
-                    disabled={!canWrite}
-                    placeholder={secretStored ? "Paste a new secret" : "Client secret"}
-                    className="pr-10"
-                    onChange={(e) => {
-                      setClientSecret(e.target.value);
-                      reset();
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setReveal((v) => !v)}
-                    aria-label={reveal ? "Hide client secret" : "Show client secret"}
-                    className="absolute right-2 top-1/2 flex -translate-y-1/2 text-ink-faint transition-colors hover:text-ink"
-                  >
-                    {reveal ? (
-                      <EyeOff className="h-4 w-4" aria-hidden />
-                    ) : (
-                      <Eye className="h-4 w-4" aria-hidden />
-                    )}
-                  </button>
-                </div>
-                {secretStored && canWrite && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setChangingSecret(false);
-                      setClientSecret("");
-                      setReveal(false);
-                      reset();
-                    }}
-                    className="inline-flex w-fit items-center gap-1.5 text-xs text-ink-muted transition-colors hover:text-ink"
-                  >
-                    <X className="h-3.5 w-3.5" aria-hidden />
-                    Cancel
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div className="flex items-center justify-between gap-3 rounded-control border border-line-strong bg-surface px-3 py-2">
-                <div className="flex items-center gap-2">
-                  <StatusDot status="online" />
-                  <span className="text-sm text-ink">A secret is stored</span>
-                  <Chip variant="default" mono>
-                    {source === "env" ? "from env" : "in db"}
-                  </Chip>
-                </div>
-                {canWrite && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setChangingSecret(true);
-                      reset();
-                    }}
-                    className="inline-flex items-center gap-1.5 text-xs font-medium text-beacon-500 transition-colors hover:text-beacon-400"
-                  >
-                    <Pencil className="h-3.5 w-3.5" aria-hidden />
-                    Change secret
-                  </button>
-                )}
-              </div>
-            )}
-          </Field>
-
-          <SessionSecretNote state={sessionSecret} />
-        </div>
+            Add one
+          </Link>{" "}
+          to turn on single sign-on.
+        </p>
       )}
+
+      {mode === "oidc" && hasProviders && <SessionSecretNote state={sessionSecret} />}
 
       {mode === "operator" && initialMode === "oidc" && (
         <p className="flex items-start gap-2 rounded-control border border-warn-500/40 bg-warn-500/10 px-3 py-2.5 text-xs text-warn-500">
           <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-          Saving switches off single sign-on. Existing sessions end and the
-          console becomes reachable without signing in.
+          Saving switches off every identity provider. Existing sessions end and
+          the console becomes reachable without signing in.
         </p>
       )}
 
@@ -376,7 +137,7 @@ export function AuthenticationForm({
         <p className="flex items-start gap-2 rounded-control border border-online-600/40 bg-online-500/10 px-3 py-2.5 text-xs text-ink">
           <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-online-500" aria-hidden />
           {saved === "oidc"
-            ? "Single sign-on saved. New sign-ins go through your provider."
+            ? "Single sign-on is on. New sign-ins go through your provider(s)."
             : "Switched to operator mode. Sign-in is now disabled."}
         </p>
       )}
@@ -400,9 +161,9 @@ export function AuthenticationForm({
                 Saving...
               </>
             ) : mode === "operator" ? (
-              "Save operator mode"
+              "Switch to operator mode"
             ) : (
-              "Save single sign-on"
+              "Turn on single sign-on"
             )}
           </Button>
         </div>
@@ -419,10 +180,10 @@ function SessionSecretNote({ state }: { state: SessionSecretState }) {
         <StatusDot status="online" className="mt-0.5" />
         <span>
           <span className="text-ink">Session secret is set</span> ({state.length}{" "}
-          chars). This is separate from the client secret above - it signs the
-          login cookie and is read from the HEADTOWER_SESSION_SECRET
-          environment variable. To change it, update that variable in your
-          environment and redeploy (which signs everyone out).
+          chars). It signs the login cookie and is read from the
+          HEADTOWER_SESSION_SECRET environment variable. To change it, update
+          that variable in your environment and redeploy (which signs everyone
+          out).
         </span>
       </div>
     );
@@ -442,8 +203,8 @@ function SessionSecretNote({ state }: { state: SessionSecretState }) {
         {critical
           ? "HEADTOWER_SESSION_SECRET is not set. "
           : `HEADTOWER_SESSION_SECRET is too short (${state.length} chars). `}
-        OIDC sign-in signs its cookie with it. Set it to 32+ characters of
-        randomness in the environment, then enable single sign-on.
+        Single sign-on signs its cookie with it. Set it to 32+ characters of
+        randomness in the environment, then turn this on.
       </span>
     </div>
   );

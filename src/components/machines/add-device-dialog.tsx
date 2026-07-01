@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
+import QRCode from "qrcode";
 import {
   CheckCircle2,
   Eye,
@@ -525,6 +526,7 @@ function ExistingKeyPanel({
 function RegisterCommandHint({ loginServerUrl }: { loginServerUrl: string }) {
   const internal = looksInternal(loginServerUrl);
   const server = internal ? "<your-headscale-url>" : loginServerUrl;
+  const command = `tailscale up --login-server ${server}`;
   return (
     <div className="flex flex-col gap-2">
       <p className="text-xs text-ink-muted">
@@ -532,7 +534,10 @@ function RegisterCommandHint({ loginServerUrl }: { loginServerUrl: string }) {
         — a <code className="data text-ink">nodekey:...</code> value, or a URL
         ending in one.
       </p>
-      <CommandBox value={`tailscale up --login-server ${server}`} copyLabel="Copy command" />
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+        <CommandBox value={command} copyLabel="Copy command" />
+        <QrCard value={command} caption="Scan to copy the command" />
+      </div>
       {internal && <InternalUrlHint />}
     </div>
   );
@@ -606,6 +611,52 @@ function CommandBox({ value, copyLabel }: { value: string; copyLabel: string }) 
 }
 
 /**
+ * Bordered card holding a scannable QR code for `value`, with a one-line
+ * caption underneath - sits next to a {@link CommandBox} so a phone can grab
+ * its contents with a camera instead of retyping them from the screen.
+ */
+function QrCard({ value, caption }: { value: string; caption: string }) {
+  return (
+    <div className="flex shrink-0 flex-col items-center gap-1.5 rounded-control border border-line bg-surface p-3">
+      <QrCodeSvg value={value} />
+      <p className="max-w-[140px] text-center text-[11px] text-ink-faint">{caption}</p>
+    </div>
+  );
+}
+
+/**
+ * Renders `value` as an inline SVG QR code, regenerated whenever it changes.
+ * Encoding happens fully client-side via the `qrcode` package - no network
+ * round trip, so it works on a fully offline / self-hosted deploy.
+ */
+function QrCodeSvg({ value }: { value: string }) {
+  const [svg, setSvg] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    QRCode.toString(value, { type: "svg", margin: 1, width: 128 }, (error, markup) => {
+      if (!cancelled && !error) setSvg(markup);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [value]);
+
+  if (!svg) {
+    return <div className="h-32 w-32 animate-pulse rounded-[0.3rem] bg-surface-2" aria-hidden />;
+  }
+
+  return (
+    <span
+      className="block h-32 w-32 [&_svg]:h-full [&_svg]:w-full"
+      role="img"
+      aria-label="QR code for the enrolment command"
+      dangerouslySetInnerHTML={{ __html: svg }}
+    />
+  );
+}
+
+/**
  * Per-OS enrolment instructions: a segmented control over the platform (adapted
  * from the Machines view toggle) switching between a ready-to-paste
  * `tailscale up` command (desktop) and a short manual-enrolment note (mobile,
@@ -624,6 +675,10 @@ function OsCommandTabs({
   const internal = looksInternal(loginServerUrl);
   const server = internal ? "<your-headscale-url>" : loginServerUrl;
   const isMobile = os === "ios" || os === "android";
+  // Same string for every platform - the desktop command box copies it
+  // verbatim, and the mobile QR bundles it too, since scanning can't run a
+  // command but it still carries the server and key together in one read.
+  const command = `tailscale up --login-server ${server} --authkey ${deviceKey}`;
 
   return (
     <div className="flex flex-col gap-2">
@@ -660,13 +715,16 @@ function OsCommandTabs({
             Install Tailscale, add an account, choose Custom / self-hosted, enter{" "}
             <code className="data text-ink">{server}</code>, then this key.
           </p>
-          <CommandBox value={deviceKey} copyLabel="Copy key" />
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+            <CommandBox value={deviceKey} copyLabel="Copy key" />
+            <QrCard value={command} caption="Scan for the server and key" />
+          </div>
         </div>
       ) : (
-        <CommandBox
-          value={`tailscale up --login-server ${server} --authkey ${deviceKey}`}
-          copyLabel="Copy command"
-        />
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+          <CommandBox value={command} copyLabel="Copy command" />
+          <QrCard value={command} caption="Scan to copy the command" />
+        </div>
       )}
 
       {internal && <InternalUrlHint />}

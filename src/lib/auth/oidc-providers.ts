@@ -22,7 +22,7 @@
  */
 
 import { sqlite } from "@/lib/db";
-import { decodeSecret, encodeSecret, ConfigError } from "@/lib/config";
+import { decodeSecret, encodeSecret, getConfig, setConfig, ConfigError } from "@/lib/config";
 
 /** Non-secret provider fields, safe to send to the settings UI. */
 export interface OidcProviderSummary {
@@ -230,4 +230,38 @@ export function removeProvider(id: string): void {
 export function reorderProviders(ids: string[]): void {
   const stmt = sqlite.prepare("UPDATE oidc_provider SET sort_order = ? WHERE id = ?");
   ids.forEach((id, index) => stmt.run(index, id));
+}
+
+/**
+ * One-time move of the legacy single-provider config (`app_settings`'s
+ * `oidc.issuer` / `oidc.client_id` / `oidc.client_secret`) into a real
+ * `oidc_provider` row, so it shows up - and can be edited - in the Identity
+ * providers list instead of living in a second, invisible place.
+ *
+ * Safe to call on every page load: a no-op once the legacy slot is empty
+ * (post-migration, or if OIDC was never configured). The move changes nothing
+ * about how sign-in behaves - every provider (legacy or not) already shares
+ * the SAME callback URL (`callbackUrl()` in `./oidc` never varies by
+ * provider), so no IdP-side redirect URI registration needs to change.
+ */
+export function migrateLegacyProvider(): void {
+  const legacy = getConfig().oidc;
+  if (!legacy) return;
+
+  createProvider({
+    name: nameFromIssuer(legacy.issuer),
+    issuer: legacy.issuer,
+    clientId: legacy.clientId,
+    clientSecret: legacy.clientSecret,
+  });
+  setConfig({ oidc: null });
+}
+
+/** A legible default name from an issuer URL, e.g. "https://id.example.com" -> "id.example.com". */
+function nameFromIssuer(issuer: string): string {
+  try {
+    return new URL(issuer).host;
+  } catch {
+    return "Single sign-on";
+  }
 }

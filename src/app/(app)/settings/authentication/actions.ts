@@ -1,29 +1,30 @@
 "use server";
 
 /**
- * Server Actions for the Authentication view.
+ * Server Action for the Authentication view.
  *
- * The setup wizard's identity step, made editable without a restart. One action
- * flips the whole sign-in model:
+ * The on/off switch for sign-in - WHICH providers exist is Settings > Identity
+ * providers' job (see `@/lib/auth/oidc-providers`); this only flips whether
+ * sign-in is required at all:
  *
- *   OPERATOR mode - clear the OIDC config; the single implicit operator returns.
- *   OIDC mode     - persist issuer / client id / secret; sign-in goes through the
- *                   provider with per-account roles. A blank secret keeps the
- *                   stored one (edit issuer/id without re-pasting the secret).
+ *   OPERATOR mode - turn every provider off (the legacy slot, if still
+ *                   unmigrated, and every `oidc_provider` row). No sign-in;
+ *                   the single implicit operator returns.
+ *   OIDC mode     - turn every existing provider back on. Refused when none
+ *                   exist yet (add one on Identity providers first) or when
+ *                   HEADTOWER_SESSION_SECRET isn't set long enough, since
+ *                   sign-in signs its cookie with it and enabling without it
+ *                   would lock everyone out on the next request.
  *
- * Two guards make the switch safe rather than a footgun:
- *   - Enabling OIDC is refused unless HEADTOWER_SESSION_SECRET is set and long
- *     enough, since sign-in signs its cookie with it - otherwise everyone locks
- *     out on the next request.
- *   - Disabling OIDC is refused when it is pinned by the env bootstrap, because
- *     deleting the DB override just falls back to env (which the UI can't unset).
- *
- * Gated on `settings.write` and audited. The client secret never leaves the
- * server in either direction.
+ * Gated on `settings.write` and audited.
  */
 
 import { revalidatePath } from "next/cache";
-import { ConfigError, getConfig, setConfig } from "@/lib/config";
+import { getConfig, setConfig } from "@/lib/config";
+import {
+  listProviders,
+  setProviderEnabled,
+} from "@/lib/auth/oidc-providers";
 import type { Session } from "@/lib/auth";
 import { audit, authorize } from "@/lib/authz";
 import {
@@ -37,40 +38,25 @@ export type SaveAuthState =
   | { status: "success"; mode: "operator" | "oidc" }
   | { status: "error"; error: string };
 
-export type SaveAuthInput =
-  | { mode: "operator" }
-  | { mode: "oidc"; issuer: string; clientId: string; clientSecret: string };
+export type SaveAuthInput = { mode: "operator" | "oidc" };
 
-/** Persist the identity model, guarding both directions of the switch. */
+/** Flip whether sign-in is required, across every configured provider. */
 export async function saveAuthentication(
   input: SaveAuthInput,
 ): Promise<SaveAuthState> {
   const gate = await authorize("settings.write");
   if (!gate.ok) return { status: "error", error: gate.reason };
 
-  if (input.mode === "operator") {
-    return disableOidc(gate.session);
-  }
-  return enableOidc(gate.session, input);
+  return input.mode === "operator" ? disableAll(gate.session) : enableAll(gate.session);
 }
 
-async function disableOidc(session: Session): Promise<SaveAuthState> {
-  const before = getConfig();
-  if (!before.oidc) {
-    return { status: "success", mode: "operator" }; // Already operator mode.
-  }
-
-  setConfig({ oidc: null });
-
-  // Deleting the DB override reverts to the env bootstrap; if that still defines
-  // OIDC, the switch didn't take. Be honest instead of silently no-op'ing.
-  if (getConfig().oidc) {
-    return {
-      status: "error",
-      error:
-        "OIDC is configured through environment variables, which can't be cleared here. " +
-        "Remove HEADTOWER_OIDC_* from the environment and restart to use operator mode.",
-    };
+async function disableAll(session: Session): Promise<SaveAuthState> {
+  // The legacy slot may still be unmigrated on an older install; clear it too
+  // so "operator mode" is a true kill switch regardless of where a provider
+  // happens to be stored.
+  if (getConfig().oidc) setConfig({ oidc: null });
+  for (const provider of listProviders()) {
+    if (provider.enabled) setProviderEnabled(provider.id, false);
   }
 
   await audit(session, {
@@ -80,66 +66,42 @@ async function disableOidc(session: Session): Promise<SaveAuthState> {
     detail: { mode: "operator" },
   });
   revalidatePath(PATH);
+  revalidatePath("/settings/identity-providers");
   return { status: "success", mode: "operator" };
 }
 
-async function enableOidc(
-  session: Session,
-  input: Extract<SaveAuthInput, { mode: "oidc" }>,
-): Promise<SaveAuthState> {
-  // Don't let an operator strand themselves: OIDC sign-in needs the session secret.
+async function enableAll(session: Session): Promise<SaveAuthState> {
+  const providers = listProviders();
+  if (providers.length === 0) {
+    return {
+      status: "error",
+      error: "Add an identity provider first, then turn this on.",
+    };
+  }
+
+  // Don't let an operator strand themselves: sign-in needs the session secret.
   const secret = sessionSecretState();
   if (secret.status !== "ok") {
     return {
       status: "error",
       error:
         secret.status === "missing"
-          ? `Set HEADTOWER_SESSION_SECRET (at least ${MIN_SESSION_SECRET_LENGTH} characters) before enabling OIDC, or sign-in will lock everyone out.`
-          : `HEADTOWER_SESSION_SECRET is too short (${secret.length} chars). Use at least ${MIN_SESSION_SECRET_LENGTH} characters before enabling OIDC.`,
+          ? `Set HEADTOWER_SESSION_SECRET (at least ${MIN_SESSION_SECRET_LENGTH} characters) before turning this on, or sign-in will lock everyone out.`
+          : `HEADTOWER_SESSION_SECRET is too short (${secret.length} chars). Use at least ${MIN_SESSION_SECRET_LENGTH} characters before turning this on.`,
     };
   }
 
-  const issuer = input.issuer.trim();
-  const clientId = input.clientId.trim();
-  if (!issuer || !clientId) {
-    return { status: "error", error: "Enter the issuer URL and client ID." };
-  }
-
-  let clientSecret = input.clientSecret.trim();
-  const rotating = clientSecret.length > 0;
-  if (!clientSecret) {
-    // Blank secret: keep the stored one so issuer/id can be edited on their own.
-    const current = getConfig().oidc;
-    if (!current) {
-      return { status: "error", error: "Enter the client secret." };
-    }
-    clientSecret = current.clientSecret;
-  }
-
-  try {
-    setConfig({ oidc: { issuer, clientId, clientSecret } });
-  } catch (err) {
-    return {
-      status: "error",
-      error: err instanceof ConfigError ? err.message : "Couldn't save the provider.",
-    };
+  for (const provider of providers) {
+    if (!provider.enabled) setProviderEnabled(provider.id, true);
   }
 
   await audit(session, {
     action: "config.authentication",
     targetType: "config",
-    targetName: hostOf(issuer),
-    detail: { mode: "oidc", issuer: hostOf(issuer), rotatedSecret: rotating },
+    targetName: "oidc",
+    detail: { mode: "oidc", providers: providers.length },
   });
   revalidatePath(PATH);
+  revalidatePath("/settings/identity-providers");
   return { status: "success", mode: "oidc" };
-}
-
-/** Host of a URL for the audit label; falls back to the raw string. */
-function hostOf(url: string): string {
-  try {
-    return new URL(url).host;
-  } catch {
-    return url;
-  }
 }

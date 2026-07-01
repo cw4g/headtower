@@ -1,9 +1,18 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Download, FilterX, ScrollText } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  FilterX,
+  ScrollText,
+  SquareTerminal,
+} from "lucide-react";
 import { auditLog, db, type AuditEntry } from "@/lib/db";
 import { listAudit } from "@/lib/audit";
-import { Card } from "@/components/ui/card";
+import { sessionCan } from "@/lib/authz";
+import { listSshSessions, type SshSession } from "@/lib/ssh-sessions";
+import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Chip } from "@/components/ui/chip";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SectionHeading } from "@/components/ui/section-heading";
@@ -22,6 +31,9 @@ import {
 export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 50;
+/** The SSH sessions card is a glance, not a full paginated trail - see
+ *  {@link SshSessionsCard}. */
+const SSH_SESSIONS_LIMIT = 20;
 
 /** Filters lifted out of the URL searchParams. */
 interface ActiveFilters {
@@ -58,6 +70,21 @@ export default async function AuditPage({
     view = await loadAudit(filters, offset);
   } catch {
     error = "Couldn't read the audit log. The local store may be unavailable.";
+  }
+
+  // Gated the same as the trail above (owner/admin/operator, not viewer) and
+  // read independently: a hiccup reading `ssh_session` shouldn't take down
+  // the rest of the page, so its failure is tracked separately from `error`.
+  const canViewSshSessions = await sessionCan("audit.read");
+  let sshSessions: SshSession[] = [];
+  let sshSessionsFailed = false;
+  if (canViewSshSessions) {
+    try {
+      const page = await listSshSessions({ limit: SSH_SESSIONS_LIMIT });
+      sshSessions = page.entries;
+    } catch {
+      sshSessionsFailed = true;
+    }
   }
 
   const entries = view?.entries ?? [];
@@ -140,6 +167,10 @@ export default async function AuditPage({
             </>
           )}
         </div>
+      )}
+
+      {canViewSshSessions && (
+        <SshSessionsCard sessions={sshSessions} failed={sshSessionsFailed} />
       )}
     </div>
   );
@@ -247,6 +278,94 @@ function TargetCell({ entry }: { entry: AuditEntry }) {
     );
   }
   return body;
+}
+
+/**
+ * A small, unfiltered "who connected to what, when" readout for the browser
+ * SSH terminal (see `@/lib/ssh-sessions`) - deliberately separate from the
+ * audit trail above rather than merged into its filters/pagination, since it
+ * reads a differently-shaped table (no `action`/`targetType` to facet on).
+ * Start-only: there's no end time or duration to show, by design (see that
+ * module's doc comment) - this is metadata, not a keystroke transcript.
+ */
+function SshSessionsCard({
+  sessions,
+  failed,
+}: {
+  sessions: SshSession[];
+  failed: boolean;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-col gap-0.5">
+          <CardTitle>Recent SSH sessions</CardTitle>
+          <p className="text-xs text-ink-muted">
+            Browser terminal connections - who, which device, which SSH user, when. Not a
+            transcript, and there&apos;s no observed end time or duration.
+          </p>
+        </div>
+        {!failed && (
+          <Chip mono variant="default">
+            {sessions.length}
+          </Chip>
+        )}
+      </CardHeader>
+      {failed ? (
+        <CardBody>
+          <p className="text-center text-xs text-ink-muted">
+            Couldn&apos;t read recent SSH sessions. The local store may be unavailable.
+          </p>
+        </CardBody>
+      ) : sessions.length === 0 ? (
+        <CardBody>
+          <p className="text-center text-xs text-ink-muted">
+            No SSH terminal sessions recorded yet.
+          </p>
+        </CardBody>
+      ) : (
+        <Table>
+          <TableHead>
+            <Tr className="hover:bg-transparent">
+              <Th>Time</Th>
+              <Th>Actor</Th>
+              <Th>Device</Th>
+              <Th>SSH user</Th>
+            </Tr>
+          </TableHead>
+          <TableBody>
+            {sessions.map((entry) => (
+              <SshSessionRow key={entry.id} entry={entry} />
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </Card>
+  );
+}
+
+function SshSessionRow({ entry }: { entry: SshSession }) {
+  const startedAt = entry.startedAt instanceof Date ? entry.startedAt : new Date(entry.startedAt);
+
+  return (
+    <Tr>
+      <Td data className="whitespace-nowrap text-ink-muted" title={isoTimestamp(startedAt)}>
+        {relativeTime(startedAt)}
+      </Td>
+      <Td>
+        <span className="data text-ink-muted">{entry.actor}</span>
+      </Td>
+      <Td>
+        <span className="inline-flex items-baseline gap-1">
+          <SquareTerminal className="h-3 w-3 shrink-0 self-center text-ink-faint" aria-hidden />
+          <span className="data text-ink">{entry.deviceName}</span>
+        </span>
+      </Td>
+      <Td>
+        <span className="data text-ink-muted">{entry.sshUser}</span>
+      </Td>
+    </Tr>
+  );
 }
 
 function ExportButton({ filters }: { filters: ActiveFilters }) {
