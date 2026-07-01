@@ -69,6 +69,7 @@ export async function testConnection(input: {
 export async function saveConnection(input: {
   url: string;
   apiKey: string;
+  loginServerUrl?: string;
 }): Promise<SaveConnectionState> {
   const gate = await authorize("settings.write");
   if (!gate.ok) return { status: "error", error: gate.reason };
@@ -91,7 +92,17 @@ export async function saveConnection(input: {
   }
 
   try {
-    setConfig({ headscale: { url, apiKey } });
+    setConfig({
+      headscale: {
+        url,
+        apiKey,
+        // Only touch the login-server URL when the caller supplies the field;
+        // a blank value clears it (falls back to the base URL at read time).
+        ...(input.loginServerUrl !== undefined
+          ? { loginServerUrl: input.loginServerUrl.trim() }
+          : {}),
+      },
+    });
   } catch (err) {
     return {
       status: "error",

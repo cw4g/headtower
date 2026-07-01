@@ -21,6 +21,11 @@ export default async function ConnectionPage() {
     process.env.HEADSCALE_URL?.trim() ??
     "";
 
+  // The raw stored value (not the resolved fallback) so a blank field honestly
+  // means "use the Headscale URL above" for the device-enrolment command.
+  const initialLoginServerUrl =
+    getRawSetting(SETTING_KEYS.headscaleLoginServerUrl) ?? "";
+
   // Distinguish a usable key from one that's stored but no longer decryptable
   // (HEADTOWER_SECRET rotated away) from none at all - an honest, actionable state.
   const keyStored =
@@ -46,6 +51,7 @@ export default async function ConnectionPage() {
 
       <ConnectionForm
         initialUrl={initialUrl}
+        initialLoginServerUrl={initialLoginServerUrl}
         keyStatus={keyStatus}
         source={config.sources.headscale}
         canWrite={canWrite}

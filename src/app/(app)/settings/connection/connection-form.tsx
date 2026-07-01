@@ -25,6 +25,8 @@ export type KeyStatus = "set" | "unreadable" | "unset";
 export interface ConnectionFormProps {
   /** Current Headscale base URL, if any. */
   initialUrl: string;
+  /** Public login-server URL for device enrolment (blank = reuse the base URL). */
+  initialLoginServerUrl: string;
   /** State of the stored API key (never the key itself). */
   keyStatus: KeyStatus;
   /** Where the live connection resolves from: the DB store or the env bootstrap. */
@@ -42,6 +44,7 @@ export interface ConnectionFormProps {
  */
 export function ConnectionForm({
   initialUrl,
+  initialLoginServerUrl,
   keyStatus,
   source,
   canWrite,
@@ -49,6 +52,7 @@ export function ConnectionForm({
   const hasStoredKey = keyStatus === "set";
 
   const [url, setUrl] = React.useState(initialUrl);
+  const [loginServerUrl, setLoginServerUrl] = React.useState(initialLoginServerUrl);
   // When there is no usable stored key the input is always open; otherwise the
   // operator opts in to rotating via the Rotate control.
   const [rotating, setRotating] = React.useState(!hasStoredKey);
@@ -96,7 +100,11 @@ export function ConnectionForm({
     setSaveError(null);
     setSaved(null);
     try {
-      const result = await saveConnection({ url: url.trim(), apiKey: apiKey.trim() });
+      const result = await saveConnection({
+        url: url.trim(),
+        apiKey: apiKey.trim(),
+        loginServerUrl: loginServerUrl.trim(),
+      });
       if (result.status === "success") {
         setSaved({ rotated: result.rotated });
         setApiKey("");
@@ -223,6 +231,26 @@ export function ConnectionForm({
             )}
           </div>
         )}
+      </Field>
+
+      <Field
+        label="Login server URL"
+        htmlFor="hs-login-url"
+        description="The public URL devices enrol against (tailscale up --login-server). Leave blank to reuse the Headscale URL above."
+      >
+        <Input
+          id="hs-login-url"
+          mono
+          value={loginServerUrl}
+          spellCheck={false}
+          autoComplete="off"
+          disabled={!canWrite}
+          placeholder="https://hs.example.com"
+          onChange={(e) => {
+            setLoginServerUrl(e.target.value);
+            invalidate();
+          }}
+        />
       </Field>
 
       {keyStatus === "unreadable" && (
