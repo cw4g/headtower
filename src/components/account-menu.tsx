@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { logout } from "@/app/logout/actions";
+import { cn } from "@/lib/cn";
 
 /** The signed-in principal, as resolved on the server and passed down. */
 export interface Account {
@@ -24,16 +25,33 @@ export interface Account {
 }
 
 /**
- * The top-bar account control. In OIDC mode it's a dropdown with the identity
- * and a Sign out action; in operator mode it's a static role chip (nothing to
- * sign out of).
+ * The sidebar-footer account control. In OIDC mode it's a dropdown with the
+ * identity and a Sign out action; in operator mode it's a static role chip
+ * (nothing to sign out of). When {@link collapsed} (or below `md`) it shrinks to
+ * just the avatar so it fits the icon rail.
  */
-export function AccountMenu({ account }: { account: Account }) {
+export function AccountMenu({
+  account,
+  collapsed = false,
+}: {
+  account: Account;
+  collapsed?: boolean;
+}) {
   if (account.method !== "oidc") {
     return (
-      <span className="hidden items-center gap-1.5 rounded-control border border-line bg-surface-2 px-2 py-1 text-xs text-ink-muted sm:inline-flex">
+      <span
+        title={collapsed ? account.roleLabel : undefined}
+        className={cn(
+          "flex items-center rounded-control border border-line bg-surface-2 text-xs text-ink-muted",
+          collapsed
+            ? "justify-center p-1"
+            : "justify-center p-1 md:justify-start md:gap-1.5 md:px-2 md:py-1",
+        )}
+      >
         <Avatar account={account} />
-        {account.roleLabel}
+        <span className={cn(collapsed ? "hidden" : "hidden md:inline")}>
+          {account.roleLabel}
+        </span>
       </span>
     );
   }
@@ -44,13 +62,26 @@ export function AccountMenu({ account }: { account: Account }) {
         <button
           type="button"
           aria-label="Account"
-          className="flex items-center gap-2 rounded-control border border-line-strong bg-surface-2 py-1 pl-1 pr-2 text-sm text-ink-muted transition-colors hover:border-ink-faint hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beacon-500/40"
+          title={collapsed ? account.name : undefined}
+          className={cn(
+            "flex items-center rounded-control border border-line-strong bg-surface-2 text-sm text-ink-muted transition-colors hover:border-ink-faint hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beacon-500/40",
+            collapsed
+              ? "justify-center p-1"
+              : "w-full justify-center p-1 md:justify-start md:gap-2 md:py-1 md:pl-1 md:pr-2",
+          )}
         >
           <Avatar account={account} />
-          <span className="hidden max-w-32 truncate sm:inline">{account.name}</span>
+          <span
+            className={cn(
+              "max-w-32 truncate",
+              collapsed ? "hidden" : "hidden md:inline",
+            )}
+          >
+            {account.name}
+          </span>
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-56">
+      <DropdownMenuContent side="top" align="start" className="min-w-56">
         <DropdownMenuLabel className="normal-case">
           <span className="block truncate text-sm font-medium text-ink">
             {account.name}

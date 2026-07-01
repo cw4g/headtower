@@ -125,9 +125,7 @@ export function SetupWizard({ initialUrl, encryptsSecrets }: SetupWizardProps) {
         <div className="overflow-hidden rounded-card border border-line bg-surface shadow-xl shadow-graphite-950/20">
           {/* Brand header */}
           <div className="flex items-center gap-3 border-b border-line px-6 py-5">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-control border border-line bg-graphite-900">
-              <BeaconMark className="h-6 w-6 text-graphite-300" />
-            </span>
+            <BeaconMark className="h-10 w-10 shrink-0" />
             <div className="flex flex-col">
               <h1 className="text-base font-semibold tracking-tight text-ink">
                 head<span className="text-ink-muted">tower</span> setup

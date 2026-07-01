@@ -10,9 +10,7 @@ export default function NotFound() {
   return (
     <div className="grid-field flex min-h-screen flex-col items-center justify-center gap-7 bg-canvas px-4 text-center">
       <Link href="/machines" className="flex items-center gap-2.5">
-        <span className="flex h-9 w-9 items-center justify-center rounded-control border border-line bg-graphite-900">
-          <BeaconMark className="h-5 w-5 text-graphite-300" />
-        </span>
+        <BeaconMark className="h-9 w-9" />
         <span className="text-[15px] font-semibold tracking-tight text-ink">
           head<span className="text-ink-muted">tower</span>
         </span>

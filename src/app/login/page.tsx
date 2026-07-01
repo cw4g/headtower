@@ -41,9 +41,7 @@ export default async function LoginPage({
         <div className="rounded-card border border-line bg-surface p-8 shadow-xl shadow-graphite-950/20">
           {/* Brand: beacon mark in its housing + wordmark. */}
           <div className="flex flex-col items-center text-center">
-            <span className="flex h-12 w-12 items-center justify-center rounded-control border border-line bg-graphite-900">
-              <BeaconMark className="h-7 w-7 text-graphite-300" />
-            </span>
+            <BeaconMark className="h-12 w-12" />
             <h1 className="mt-4 text-lg font-semibold tracking-tight text-ink">
               head<span className="text-ink-muted">tower</span>
             </h1>

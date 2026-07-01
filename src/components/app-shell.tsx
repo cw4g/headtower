@@ -1,19 +1,21 @@
 import * as React from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { ConsoleTopBar } from "@/components/console-top-bar";
+import { ConsoleSidebar } from "@/components/console-sidebar";
 import type { Account } from "@/components/account-menu";
 import { getSession } from "@/lib/auth";
 import { isOidcEnabled } from "@/lib/auth/oidc";
 import { getConfig } from "@/lib/config";
 import { ROLE_LABELS } from "@/lib/rbac";
+import { SIDEBAR_COOKIE, normalizeSidebarCollapsed } from "@/lib/sidebar";
 import { THEME_COOKIE, normalizeTheme } from "@/lib/theme";
 
 /**
- * The operator-console chrome: the schematic top bar over a grid-field canvas,
- * with the routed view rendered into the centred content column. Server
- * component - it resolves the session here so the top bar can show the account,
- * and performs the secure (db-backed) auth check that complements the proxy gate.
+ * The operator-console chrome: the schematic collapsible sidebar beside a
+ * scrollable, grid-field content area whose centred column hosts the routed
+ * view. Server component - it resolves the session here so the sidebar can show
+ * the account, and performs the secure (db-backed) auth check that complements
+ * the proxy gate.
  */
 export async function AppShell({ children }: { children: React.ReactNode }) {
   // Needs-setup gate: with no Headscale connection (neither env nor UI-set), the
@@ -25,10 +27,18 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
 
   const session = await getSession();
 
-  // The saved theme, read once here so the top-bar toggle renders its active
+  const cookieStore = await cookies();
+
+  // The saved theme, read once here so the sidebar toggle renders its active
   // segment correctly on the first paint (the inline script resolves the same
   // cookie for the page itself). Falls back to the dark default when unset.
-  const theme = normalizeTheme((await cookies()).get(THEME_COOKIE)?.value);
+  const theme = normalizeTheme(cookieStore.get(THEME_COOKIE)?.value);
+
+  // The persisted sidebar width, so the first server render matches the operator's
+  // last choice and the rail doesn't flash open/closed on load.
+  const collapsed = normalizeSidebarCollapsed(
+    cookieStore.get(SIDEBAR_COOKIE)?.value,
+  );
 
   // Secure check: in OIDC mode a missing/invalid session must not reach the app.
   // The proxy already does the optimistic redirect; this also catches a valid
@@ -48,13 +58,13 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
     : null;
 
   return (
-    <div className="flex min-h-screen flex-col bg-canvas">
-      <ConsoleTopBar account={account} theme={theme} />
-      <main className="relative flex-1">
-        <div
-          className="grid-field pointer-events-none absolute inset-0"
-          aria-hidden
-        />
+    <div className="flex h-screen overflow-hidden bg-canvas">
+      <ConsoleSidebar
+        account={account}
+        theme={theme}
+        initialCollapsed={collapsed}
+      />
+      <main className="grid-field relative min-w-0 flex-1 overflow-y-auto">
         <div className="relative mx-auto w-full max-w-[1400px] px-4 py-6">
           {children}
         </div>

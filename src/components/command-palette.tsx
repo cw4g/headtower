@@ -18,7 +18,7 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
-import { COMMAND_EVENT } from "@/components/console-top-bar";
+import { COMMAND_EVENT } from "@/components/console-sidebar";
 import { Kbd } from "@/components/ui/kbd";
 import { cn } from "@/lib/cn";
 // Type-only: erased at build, so the rbac server-only guard never runs here.

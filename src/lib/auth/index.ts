@@ -22,7 +22,7 @@
  */
 
 import { ConfigError, getConfig } from "@/lib/config";
-import { DEFAULT_ROLE, type Role } from "@/lib/rbac";
+import { type Role } from "@/lib/rbac";
 import { loadSession } from "./session";
 
 /** How a session was established. */
@@ -94,7 +94,9 @@ export async function getSession(): Promise<Session | null> {
     };
   }
 
-  return { user: OPERATOR, role: DEFAULT_ROLE };
+  // Single-operator mode: whoever can reach the console owns the deployment, so
+  // grant the full owner role (every capability, including settings.write).
+  return { user: OPERATOR, role: "owner" };
 }
 
 /**
