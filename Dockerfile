@@ -5,7 +5,9 @@
 FROM node:24-slim AS deps
 WORKDIR /app
 RUN corepack enable
-COPY package.json pnpm-lock.yaml ./
+# pnpm-workspace.yaml carries ignoredBuiltDependencies (sharp, unrs-resolver);
+# without it pnpm hard-errors on their unrun build scripts.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 
 FROM node:24-slim AS build
