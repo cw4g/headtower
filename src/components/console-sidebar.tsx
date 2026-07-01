@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  ArrowUpCircle,
   Globe,
   LayoutDashboard,
   Route,
@@ -42,9 +43,6 @@ const NAV: NavItem[] = [
   { label: "Settings", href: "/settings", icon: Settings },
 ];
 
-/** Mono build tag shown at the foot of the sidebar. */
-export const APP_VERSION = "v0.1.0";
-
 /** Custom event the command palette listens for. */
 export const COMMAND_EVENT = "headtower:command";
 
@@ -64,10 +62,19 @@ export function ConsoleSidebar({
   account,
   theme,
   initialCollapsed = false,
+  appVersion,
+  updateAvailable = false,
+  latestVersion,
 }: {
   account?: Account | null;
   theme?: Theme;
   initialCollapsed?: boolean;
+  /** The running build's version (from package.json), for the footer tag. */
+  appVersion?: string;
+  /** Whether a newer commit is published than what's running (see @/lib/version). */
+  updateAvailable?: boolean;
+  /** The newer version's label, when {@link updateAvailable}. */
+  latestVersion?: string | null;
 }) {
   const pathname = usePathname() ?? "";
   const [collapsed, setCollapsed] = React.useState(initialCollapsed);
@@ -149,10 +156,43 @@ export function ConsoleSidebar({
 
         {account && <AccountMenu account={account} collapsed={collapsed} />}
 
+        {updateAvailable && collapsed && (
+          <Tooltip
+            content={
+              latestVersion ? `Update available - v${latestVersion}` : "Update available"
+            }
+            side="right"
+          >
+            <a
+              href="https://headtower.niheshr.com/changelog"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center rounded-control p-1.5 text-beacon-500 transition-colors hover:bg-surface-2"
+              aria-label="Update available"
+            >
+              <ArrowUpCircle className="h-4 w-4" aria-hidden />
+            </a>
+          </Tooltip>
+        )}
+
         {!collapsed && (
-          <span className="data hidden px-1 pt-0.5 text-[10px] text-ink-faint md:block">
-            {APP_VERSION}
-          </span>
+          <div className="hidden md:flex md:flex-col md:gap-1 md:px-1">
+            {updateAvailable && (
+              <a
+                href="https://headtower.niheshr.com/changelog"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 rounded-control border border-beacon-500/30 bg-beacon-500/10 px-2 py-1 text-[10px] font-medium text-beacon-500 transition-colors hover:bg-beacon-500/15"
+              >
+                <ArrowUpCircle className="h-3 w-3 shrink-0" aria-hidden />
+                Update available
+                {latestVersion && <span className="data">v{latestVersion}</span>}
+              </a>
+            )}
+            <span className="data text-[10px] text-ink-faint">
+              v{appVersion}
+            </span>
+          </div>
         )}
       </div>
     </aside>

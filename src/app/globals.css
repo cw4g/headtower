@@ -107,12 +107,11 @@
   }
 }
 
-/* Schematic hairline grid - the console backdrop. Opt-in via .grid-field. */
+/* .grid-field is a plain backdrop - no pattern. Kept as a class (rather than
+   removed from its 19 call sites) so it stays a single toggle point if a
+   backdrop treatment is wanted again later. */
 .grid-field {
-  background-image:
-    linear-gradient(to right, var(--grid) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
-  background-size: 32px 32px;
+  background-image: none;
 }
 
 * {

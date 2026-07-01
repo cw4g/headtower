@@ -28,6 +28,10 @@ ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 # Persisted local store (settings + sessions + audit log).
 ENV HEADTOWER_DB_PATH=/app/data/headtower.db
+# Which commit this image was built from, for the in-app update check (see
+# @/lib/version). Pass at build time: --build-arg GIT_SHA=$(git rev-parse HEAD)
+ARG GIT_SHA=""
+ENV HEADTOWER_GIT_SHA=$GIT_SHA
 RUN mkdir -p /app/data
 # Next.js "standalone" output: a minimal self-contained server.
 COPY --from=build /app/.next/standalone ./

@@ -9,6 +9,7 @@ import { getConfig } from "@/lib/config";
 import { ROLE_LABELS } from "@/lib/rbac";
 import { SIDEBAR_COOKIE, normalizeSidebarCollapsed } from "@/lib/sidebar";
 import { THEME_COOKIE, normalizeTheme } from "@/lib/theme";
+import { APP_VERSION, checkForUpdate } from "@/lib/version";
 
 /**
  * The operator-console chrome: the schematic collapsible sidebar beside a
@@ -57,12 +58,20 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
       }
     : null;
 
+  // Informational, not gated by role - every operator benefits from knowing a
+  // newer build exists. Fails quiet (see @/lib/version), so an offline check
+  // never blocks the shell from rendering.
+  const update = await checkForUpdate();
+
   return (
     <div className="flex h-screen overflow-hidden bg-canvas">
       <ConsoleSidebar
         account={account}
         theme={theme}
         initialCollapsed={collapsed}
+        appVersion={APP_VERSION}
+        updateAvailable={update.available}
+        latestVersion={update.latestVersion}
       />
       <main className="grid-field relative min-w-0 flex-1 overflow-y-auto">
         <div className="relative mx-auto w-full max-w-[1400px] px-4 py-6">

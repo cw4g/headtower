@@ -16,8 +16,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/field";
-import { cn } from "@/lib/cn";
-import { matchingOidcPreset, OIDC_PROVIDER_PRESETS } from "@/lib/oidc-presets";
 import { addProvider, editProvider } from "./actions";
 import type { OidcProviderSummary } from "@/lib/auth/oidc-providers";
 
@@ -36,11 +34,10 @@ export interface ProviderDialogProps {
 }
 
 /**
- * Add/edit dialog for an OIDC provider row. Create mode leads with a preset
- * picker (prefills the Issuer field only, never client id/secret - the same
- * presets as the legacy Settings > Authentication form). Edit mode preloads
- * the provider's fields and masks the stored secret behind a "Change secret"
- * control, matching the authentication form's rotate pattern.
+ * Add/edit dialog for an OIDC provider row: name, issuer, client id, secret.
+ * Edit mode preloads the provider's fields and masks the stored secret
+ * behind a "Change secret" control, matching the authentication form's
+ * rotate pattern.
  */
 export function ProviderDialog({
   provider,
@@ -95,7 +92,6 @@ export function ProviderDialog({
     });
   }
 
-  const activePreset = matchingOidcPreset(issuer);
   const canSubmit =
     name.trim().length > 0 &&
     issuer.trim().length > 0 &&
@@ -126,41 +122,6 @@ export function ProviderDialog({
           </DialogHeader>
 
           <DialogBody className="flex flex-col gap-4">
-            {!isEdit && (
-              <div className="flex flex-col gap-1.5">
-                <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-muted">
-                  Preset
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {OIDC_PROVIDER_PRESETS.map((preset) => (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      onClick={() => {
-                        setIssuer(preset.issuer);
-                        if (!name.trim() || OIDC_PROVIDER_PRESETS.some((p) => p.label === name)) {
-                          setName(preset.label);
-                        }
-                      }}
-                      className={cn(
-                        "rounded-control border px-2.5 py-1 text-xs transition-colors",
-                        activePreset === preset.id
-                          ? "border-beacon-500 bg-beacon-500/10 text-beacon-500"
-                          : "border-line-strong bg-surface text-ink-muted hover:bg-surface-2 hover:text-ink",
-                      )}
-                    >
-                      {preset.label}
-                    </button>
-                  ))}
-                </div>
-                {activePreset && (
-                  <p className="text-xs text-ink-faint">
-                    {OIDC_PROVIDER_PRESETS.find((p) => p.id === activePreset)?.hint}
-                  </p>
-                )}
-              </div>
-            )}
-
             <Field label="Display name" htmlFor="provider-name">
               <Input
                 id="provider-name"

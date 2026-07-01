@@ -1,11 +1,14 @@
 name: Deploy docs
 
+# Runs on every push to main, not just docs/** changes: the docs site also
+# publishes version.json (see the "Write version.json" step below), the
+# public, unauthenticated source the app's in-app update check reads from
+# (the app repo is private, so it can't safely call the GitHub API itself -
+# see @/lib/version). That file needs to stay current with every commit, not
+# just docs edits.
 on:
   push:
     branches: [main]
-    paths:
-      - "docs/**"
-      - ".github/workflows/deploy-docs.yml"
   workflow_dispatch:
 
 permissions:
@@ -36,6 +39,14 @@ jobs:
       - name: Install dependencies
         working-directory: docs
         run: pnpm install --frozen-lockfile
+
+      - name: Write version.json
+        run: |
+          version=$(node -p "require('./package.json').version")
+          sha="${{ github.sha }}"
+          published_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          printf '{"version":"%s","sha":"%s","publishedAt":"%s"}\n' \
+            "$version" "$sha" "$published_at" > docs/public/version.json
 
       - name: Build (static export)
         working-directory: docs

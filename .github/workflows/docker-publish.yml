@@ -1,0 +1,90 @@
+name: Publish Docker images
+
+# Builds and publishes the app + agent images to GHCR on every push to main,
+# tagged :latest, :sha-<short>, and the current package.json version. The app
+# image also gets the commit baked in as HEADTOWER_GIT_SHA (see the
+# Dockerfile's runner stage), which the running app compares against the
+# public version.json (see .github/workflows/deploy-docs.yml) for its
+# in-app "update available" indicator.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "public/**"
+      - "agent/**"
+      - "Dockerfile"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "next.config.ts"
+      - ".github/workflows/docker-publish.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  APP_IMAGE: ghcr.io/${{ github.repository_owner }}/headtower
+  AGENT_IMAGE: ghcr.io/${{ github.repository_owner }}/headtower-agent
+
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        run: echo "value=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+          tags: |
+            ${{ env.APP_IMAGE }}:latest
+            ${{ env.APP_IMAGE }}:sha-${{ github.sha }}
+            ${{ env.APP_IMAGE }}:${{ steps.version.outputs.value }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  agent:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        run: echo "value=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./agent
+          push: true
+          tags: |
+            ${{ env.AGENT_IMAGE }}:latest
+            ${{ env.AGENT_IMAGE }}:sha-${{ github.sha }}
+            ${{ env.AGENT_IMAGE }}:${{ steps.version.outputs.value }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
