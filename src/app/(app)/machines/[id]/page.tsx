@@ -404,6 +404,16 @@ function SystemCard({ agent }: { agent: NodeAgentInfo }) {
             {agent.os}
           </DataRow>
         )}
+        {agent.osVersion && (
+          <DataRow
+            label="OS version"
+            mono
+            copy={agent.osVersion}
+            title={agent.osVersion}
+          >
+            {agent.osVersion}
+          </DataRow>
+        )}
         {agent.clientVersion && (
           <DataRow
             label="Client"

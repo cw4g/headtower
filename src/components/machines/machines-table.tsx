@@ -19,6 +19,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { NodeActionsMenu } from "@/components/machines/node-actions-menu";
 import { cn } from "@/lib/cn";
 import {
+  agentOsLabel,
   nodeDot,
   ownerLabel,
   matchesQuery,
@@ -275,7 +276,7 @@ function MachineRow({
             className="data block text-xs text-ink-faint"
             title="Reported by agent"
           >
-            {[node.agent.os, node.agent.clientVersion]
+            {[agentOsLabel(node.agent), node.agent.clientVersion]
               .filter(Boolean)
               .join(" · ")}
           </span>

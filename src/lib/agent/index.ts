@@ -91,7 +91,8 @@ function normalizePeer(raw: unknown): AgentPeer | null {
 
   return {
     hostname: hostname ?? "",
-    os: pickString(obj, ["os", "OS", "osVersion"]),
+    os: pickString(obj, ["os", "OS"]),
+    osVersion: pickString(obj, ["osVersion", "OSVersion"]),
     clientVersion: pickString(obj, ["clientVersion", "version", "tailscaleVersion"]),
     addresses,
     endpoints: pickStringArray(obj, ["endpoints", "endpoint"]),

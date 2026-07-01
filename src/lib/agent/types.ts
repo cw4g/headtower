@@ -15,6 +15,8 @@ export interface AgentPeer {
   hostname: string;
   /** Operating system label, e.g. "linux" / "macOS" / "windows". */
   os: string | null;
+  /** OS version, e.g. "17.4.1" (iOS) / "14.4" (macOS). Distinct from the client version below. */
+  osVersion: string | null;
   /** Tailscale client version string, e.g. "1.78.1". */
   clientVersion: string | null;
   /** Tailnet addresses, used as a fallback join key when hostnames differ. */

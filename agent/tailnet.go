@@ -87,6 +87,7 @@ type peer struct {
 	Hostname         string   `json:"hostname"`
 	DNSName          string   `json:"dnsName,omitempty"`
 	OS               string   `json:"os,omitempty"`
+	OSVersion        string   `json:"osVersion,omitempty"`
 	TailscaleVersion string   `json:"tailscaleVersion,omitempty"`
 	Online           bool     `json:"online"`
 	LastSeen         string   `json:"lastSeen,omitempty"` // RFC3339; control reports it only when offline
@@ -139,16 +140,18 @@ func (t *tailnet) Peers(ctx context.Context) (*peersResponse, error) {
 
 // toPeer converts a single tsnet PeerStatus into our public peer shape.
 func (t *tailnet) toPeer(ctx context.Context, ps *ipnstate.PeerStatus) peer {
+	tsVersion, osVersion := t.peerHostinfo(ctx, ps.PublicKey)
 	p := peer{
 		ID:               string(ps.ID),
 		Hostname:         ps.HostName,
 		DNSName:          strings.TrimSuffix(ps.DNSName, "."),
 		OS:               ps.OS,
+		OSVersion:        osVersion,
 		Online:           ps.Online,
 		Relay:            ps.Relay,
 		Addresses:        addrsToStrings(ps.TailscaleIPs),
 		Endpoints:        append([]string(nil), ps.Addrs...),
-		TailscaleVersion: t.peerVersion(ctx, ps.PublicKey),
+		TailscaleVersion: tsVersion,
 	}
 	if !ps.LastSeen.IsZero() {
 		p.LastSeen = ps.LastSeen.UTC().Format(time.RFC3339)
@@ -156,25 +159,26 @@ func (t *tailnet) toPeer(ctx context.Context, ps *ipnstate.PeerStatus) peer {
 	return p
 }
 
-// peerVersion best-effort resolves a peer's tailscale client version, which the
-// status map does not carry directly. It is looked up via the node's Hostinfo
-// and returns "" if unavailable.
-func (t *tailnet) peerVersion(ctx context.Context, nodeKey key.NodePublic) string {
+// peerHostinfo best-effort resolves a peer's tailscale client version and OS
+// version (e.g. "17.4.1" for iOS, "14.4" for macOS) - neither is carried by the
+// status map directly. Both come off the same Hostinfo, so one WhoIs lookup
+// serves both fields; either return is "" when unavailable.
+func (t *tailnet) peerHostinfo(ctx context.Context, nodeKey key.NodePublic) (tsVersion, osVersion string) {
 	if nodeKey.IsZero() {
-		return ""
+		return "", ""
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
 	who, err := t.lc.WhoIsNodeKey(ctx, nodeKey)
 	if err != nil || who == nil || who.Node == nil {
-		return ""
+		return "", ""
 	}
 	hi := who.Node.Hostinfo
 	if !hi.Valid() {
-		return ""
+		return "", ""
 	}
-	return hi.IPNVersion()
+	return hi.IPNVersion(), hi.OSVersion()
 }
 
 func addrsToStrings(addrs []netip.Addr) []string {

@@ -26,8 +26,21 @@ export type DotStatus = "online" | "warn" | "critical" | "idle";
  */
 export interface NodeAgentInfo {
   os: string | null;
+  osVersion: string | null;
   clientVersion: string | null;
   endpoints: string[];
+}
+
+/**
+ * Combined OS name + version for display, e.g. "iOS 17.4" or "macOS 14.4".
+ * Falls back to the bare OS name when the version is unknown, and to null when
+ * there is no agent data at all.
+ */
+export function agentOsLabel(
+  agent: Pick<NodeAgentInfo, "os" | "osVersion"> | null | undefined,
+): string | null {
+  if (!agent?.os) return null;
+  return agent.osVersion ? `${agent.os} ${agent.osVersion}` : agent.os;
 }
 
 /** A serialisable projection of a Node for rendering in client + server views. */
@@ -232,6 +245,7 @@ export function toNodeView(
     agent: agent
       ? {
           os: agent.os,
+          osVersion: agent.osVersion,
           clientVersion: agent.clientVersion,
           endpoints: agent.endpoints,
         }

@@ -11,6 +11,7 @@ import { Sparkline, type ChartTone } from "@/components/charts";
 import { NodeActionsMenu } from "@/components/machines/node-actions-menu";
 import { cn } from "@/lib/cn";
 import {
+  agentOsLabel,
   nodeDot,
   matchesQuery,
   matchesStatus,
@@ -230,7 +231,7 @@ function HostCard({
   const visibleTags = node.tags.slice(0, 3);
   const extraTags = node.tags.length - visibleTags.length;
 
-  const os = node.agent?.os ?? null;
+  const os = agentOsLabel(node.agent);
   const version = node.agent?.clientVersion ?? null;
 
   const primaryAddr = node.ipv4 ?? node.ipv6;
@@ -249,11 +250,11 @@ function HostCard({
     // Relative wrapper so the actions kebab can float in the corner as a
     // sibling of the card's Link - nesting an interactive trigger inside the
     // anchor would double up on clicks (both "open the menu" and "navigate").
-    <div className="relative">
+    <div className="relative h-full">
       <Link
         href={`/machines/${node.id}`}
         className={cn(
-          "group flex flex-col gap-3 rounded-card border border-line bg-surface p-3.5 transition-colors hover:border-line-strong hover:bg-surface-2/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beacon-500/40",
+          "group flex h-full flex-col gap-3 rounded-card border border-line bg-surface p-3.5 transition-colors hover:border-line-strong hover:bg-surface-2/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beacon-500/40",
           canManage && "pr-9",
         )}
       >

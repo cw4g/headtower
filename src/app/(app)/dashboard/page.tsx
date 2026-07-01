@@ -13,6 +13,7 @@ import { getConfig } from "@/lib/config";
 import { listAudit, type AuditEntry } from "@/lib/audit";
 import { sessionCan } from "@/lib/authz";
 import {
+  agentOsLabel,
   toNodeView,
   nowMs,
   ownerLabel,
@@ -247,7 +248,7 @@ function expiryEvents(views: NodeView[], now: number): TimelineEvent[] {
 function osBreakdown(views: NodeView[]): BarDatum[] {
   const counts = new Map<string, number>();
   for (const view of views) {
-    const label = view.agent?.os?.trim();
+    const label = agentOsLabel(view.agent)?.trim();
     if (label) counts.set(label, (counts.get(label) ?? 0) + 1);
   }
   return topSlices(counts, 8);
