@@ -4,6 +4,7 @@ import { nodes as nodesApi, users as usersApi } from "@/lib/headscale";
 import { getAgentPeers } from "@/lib/agent";
 import { withoutAgentNodes } from "@/lib/agent-node";
 import { sessionCan } from "@/lib/authz";
+import { getConfig } from "@/lib/config";
 import {
   toNodeView,
   nowMs,
@@ -77,6 +78,10 @@ export default async function MachinesPage() {
   const canAddDevice = !error && (await sessionCan("keys.write"));
   // Row/card action menus (rename, tags, expire, delete) need machines.write.
   const canManage = !error && (await sessionCan("machines.write"));
+  // The dialog's "use existing key" mode builds its command box up front (no
+  // server round trip), so it needs the login-server URL before the operator
+  // ever submits anything, not just after `createDeviceKey` returns one.
+  const loginServerUrl = getConfig().headscale?.loginServerUrl ?? "";
 
   return (
     <div className="flex flex-col gap-6">
@@ -86,7 +91,9 @@ export default async function MachinesPage() {
         description="Every device enrolled in the control plane and its live signal."
       >
         {hasMachines && <MachinesViewToggle view={view} />}
-        {canAddDevice && <AddDeviceDialog users={userOptions} />}
+        {canAddDevice && (
+          <AddDeviceDialog users={userOptions} loginServerUrl={loginServerUrl} />
+        )}
       </SectionHeading>
 
       {error ? (
@@ -103,7 +110,9 @@ export default async function MachinesPage() {
           title="No machines enrolled"
           description="Once a device registers with this control plane it appears here. Enrol one with a pre-auth key or the Headscale CLI."
           action={
-            canAddDevice ? <AddDeviceDialog users={userOptions} /> : undefined
+            canAddDevice ? (
+              <AddDeviceDialog users={userOptions} loginServerUrl={loginServerUrl} />
+            ) : undefined
           }
         />
       )}

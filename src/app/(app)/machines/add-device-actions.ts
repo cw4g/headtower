@@ -1,17 +1,20 @@
 "use server";
 
 /**
- * Server Action for the Machines "Add device" dialog.
+ * Server Actions for the Machines "Add device" dialog.
  *
- * Mints a Headscale pre-auth key the same way Settings > Pre-auth keys does,
- * then folds in the effective login-server URL so the dialog can render a
- * ready-to-paste `tailscale up` command alongside the minted key. No stub: this
- * talks to the control plane and the effective config.
+ * `createDeviceKey` mints a Headscale pre-auth key the same way Settings >
+ * Pre-auth keys does, then folds in the effective login-server URL so the
+ * dialog can render a ready-to-paste `tailscale up` command alongside the
+ * minted key. `registerDevice` covers the opposite direction: the device
+ * already ran `tailscale up --login-server` without an authkey and is holding
+ * a registration key, and this action hands it to Headscale to complete the
+ * enrolment. No stub: both talk to the control plane and the effective config.
  */
 
 import { revalidatePath } from "next/cache";
 import { getConfig } from "@/lib/config";
-import { preAuthKeys } from "@/lib/headscale";
+import { nodes, preAuthKeys } from "@/lib/headscale";
 import { audit, authorize } from "@/lib/authz";
 import { describeHeadscaleError } from "./errors";
 import { PRE_AUTH_KEY_PRESETS, resolveExpiry } from "../settings/expiry-presets";
@@ -94,4 +97,50 @@ export async function createDeviceKey(
 function readString(formData: FormData, name: string): string {
   const raw = formData.get(name);
   return typeof raw === "string" ? raw.trim() : "";
+}
+
+/** Result of {@link registerDevice}, shaped for the Add device dialog's "Register device" mode. */
+export type RegisterDeviceState =
+  | { status: "success"; nodeName: string }
+  | { status: "error"; error: string };
+
+/**
+ * Complete an interactive `tailscale up --login-server <url>` login (no
+ * authkey) by handing Headscale the registration key the device printed.
+ * Unlike `createDeviceKey`, there's no key to reveal here: the device is
+ * enrolled the moment this succeeds.
+ */
+export async function registerDevice(input: {
+  user: string;
+  key: string;
+}): Promise<RegisterDeviceState> {
+  const gate = await authorize("keys.write");
+  if (!gate.ok) {
+    return { status: "error", error: gate.reason };
+  }
+
+  const user = input.user.trim();
+  if (!user) {
+    return { status: "error", error: "Select the user this device enrols to." };
+  }
+
+  const key = input.key.trim();
+  if (!key) {
+    return { status: "error", error: "Paste the registration key shown on the device." };
+  }
+
+  try {
+    const node = await nodes.register(user, key);
+    await audit(gate.session, {
+      action: "node.register",
+      targetType: "node",
+      targetId: node.id,
+      targetName: node.name || user,
+      detail: { user },
+    });
+    revalidatePath("/machines");
+    return { status: "success", nodeName: node.name };
+  } catch (err) {
+    return { status: "error", error: describeHeadscaleError(err) };
+  }
 }

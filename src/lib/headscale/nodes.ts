@@ -3,6 +3,7 @@
  *
  *   GET    /api/v1/node                          list()
  *   GET    /api/v1/node/{id}                     get(id)
+ *   POST   /api/v1/node/register?user=&key=      register(user, key)
  *   POST   /api/v1/node/{id}/rename/{name}       rename(id, name)
  *   POST   /api/v1/node/{id}/tags        { tags }    setTags(id, tags)
  *   POST   /api/v1/node/{id}/approve_routes { routes } approveRoutes(id, routes)
@@ -43,6 +44,20 @@ export const nodes = {
   /** Fetch a single node by id. */
   async get(id: NodeId): Promise<Node> {
     const res = await request<NodeResponse>(`/v1/node/${seg(id)}`);
+    return res.node;
+  },
+
+  /**
+   * Register a node that began interactive login (`tailscale up --login-server`
+   * with no auth key) and printed a registration key. `user` is the owning
+   * user's numeric id (as with pre-auth keys); `key` is the registration key the
+   * device showed (a `nodekey:...` / `mkey:...` value). Returns the new node.
+   */
+  async register(user: NodeId, key: string): Promise<Node> {
+    const res = await request<NodeResponse>("/v1/node/register", {
+      method: "POST",
+      query: { user, key },
+    });
     return res.node;
   },
 
