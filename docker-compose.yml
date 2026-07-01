@@ -20,6 +20,9 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       - NODE_ENV=production
+      # Runtime base path (mirrors the build arg) so server-side URL building -
+      # e.g. the OIDC redirect_uri - knows the /admin sub-path mount.
+      - HEADTOWER_BASE_PATH=${HEADTOWER_BASE_PATH:-}
       # Core connection - set these in .env and it connects on boot, skipping
       # the setup wizard. Everything else is configured in the Settings panel.
       - HEADSCALE_URL=${HEADSCALE_URL:-}
