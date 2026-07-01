@@ -98,7 +98,10 @@ export function getOidcConfiguration(): Promise<client.Configuration> {
 
 /** Build the callback `redirect_uri`, which must match exactly at exchange time. */
 export function callbackUrl(origin: string): string {
-  return `${origin}/login/callback`;
+  // Include the app's base path (e.g. "/admin") so the redirect_uri points at
+  // where the callback route is actually served behind the reverse proxy.
+  const basePath = process.env.HEADTOWER_BASE_PATH?.trim() || "";
+  return `${origin}${basePath}/login/callback`;
 }
 
 /** The claims we persist about a signed-in account. */
