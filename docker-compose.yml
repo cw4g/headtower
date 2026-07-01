@@ -4,7 +4,10 @@ services:
     container_name: headtower
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      # HOST bind:port -> container's 3000. Override HEADTOWER_BIND (e.g. in a
+      # .env file) to reuse an existing port or bind to localhost behind a proxy,
+      # e.g. HEADTOWER_BIND=127.0.0.1:3001
+      - "${HEADTOWER_BIND:-0.0.0.0:3000}:3000"
     volumes:
       # Local store: your Headscale connection, OIDC config, sessions, audit log.
       - headtower-data:/app/data
