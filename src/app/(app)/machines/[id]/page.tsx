@@ -227,7 +227,7 @@ function DetailHeader({
         </div>
 
         <div className="flex items-center gap-3">
-          {canSsh && sshHost && <TerminalAction host={sshHost} name={view.name} />}
+          {canSsh && sshHost && <TerminalAction id={view.id} name={view.name} />}
           <span className="data text-xs text-ink-faint">#{view.id}</span>
         </div>
       </div>

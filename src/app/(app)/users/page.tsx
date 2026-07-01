@@ -2,6 +2,8 @@ import { TriangleAlert, UsersRound } from "lucide-react";
 import { nodes, users, type User } from "@/lib/headscale";
 import { withoutAgentNodes } from "@/lib/agent-node";
 import { sessionCan } from "@/lib/authz";
+import { appUser, db, type AppUser } from "@/lib/db";
+import { ROLE_LABELS } from "@/lib/rbac";
 import { Card } from "@/components/ui/card";
 import { Chip } from "@/components/ui/chip";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -16,6 +18,7 @@ import {
 } from "@/components/ui/table";
 import { AddUserDialog } from "./add-user-dialog";
 import { describeHeadscaleError } from "./errors";
+import { AvatarImage } from "./avatar-image";
 
 // The tailnet is live state: always render against the control plane, never a
 // build-time snapshot.
@@ -25,6 +28,8 @@ interface UsersData {
   list: User[];
   /** Node count per user id, or null when the node list couldn't be read. */
   nodeCounts: Map<string, number> | null;
+  /** The Headtower account (if any) that signed in via OIDC as this tailnet user. */
+  accounts: Map<string, AppUser>;
 }
 
 async function loadUsers(): Promise<UsersData> {
@@ -47,7 +52,52 @@ async function loadUsers(): Promise<UsersData> {
     nodeCounts = null;
   }
 
-  return { list, nodeCounts };
+  // Account enrichment is best-effort too: a healthy tailnet user list
+  // shouldn't be withheld just because the local account read failed.
+  let accountRows: AppUser[] = [];
+  try {
+    accountRows = await db.select().from(appUser);
+  } catch {
+    accountRows = [];
+  }
+  const accounts = matchAccounts(list, accountRows);
+
+  return { list, nodeCounts, accounts };
+}
+
+/**
+ * Match each Headscale (tailnet) user to the Headtower account that signed in
+ * via OIDC as that same person, when one exists.
+ *
+ * Headscale has no idea Headtower's OIDC accounts exist - the two are joined
+ * here, at render time, by lowercased email (the stable identifier on both
+ * sides), falling back to a lowercased name match when either side lacks an
+ * email. A user with no match is a plain Headscale/local user with no
+ * Headtower login.
+ */
+function matchAccounts(
+  list: User[],
+  accountRows: AppUser[],
+): Map<string, AppUser> {
+  const byEmail = new Map<string, AppUser>();
+  const byName = new Map<string, AppUser>();
+  for (const account of accountRows) {
+    const email = account.email?.trim().toLowerCase();
+    if (email && !byEmail.has(email)) byEmail.set(email, account);
+    const name = account.name.trim().toLowerCase();
+    if (name && !byName.has(name)) byName.set(name, account);
+  }
+
+  const matches = new Map<string, AppUser>();
+  for (const user of list) {
+    const email = user.email?.trim().toLowerCase();
+    const match =
+      (email ? byEmail.get(email) : undefined) ??
+      byName.get(user.displayName?.trim().toLowerCase() ?? "") ??
+      byName.get(user.name?.trim().toLowerCase() ?? "");
+    if (match) matches.set(user.id, match);
+  }
+  return matches;
 }
 
 export default async function UsersPage() {
@@ -61,6 +111,7 @@ export default async function UsersPage() {
 
   const list = data?.list ?? [];
   const nodeCounts = data?.nodeCounts ?? null;
+  const accounts = data?.accounts ?? new Map<string, AppUser>();
   // Only roles with users.write may create users; hide the affordance otherwise.
   const canCreate = await sessionCan("users.write");
 
@@ -109,6 +160,7 @@ export default async function UsersPage() {
                 <UserRow
                   key={user.id}
                   user={user}
+                  account={accounts.get(user.id) ?? null}
                   nodeCount={nodeCounts?.get(user.id) ?? null}
                   countsAvailable={nodeCounts !== null}
                 />
@@ -123,10 +175,13 @@ export default async function UsersPage() {
 
 function UserRow({
   user,
+  account,
   nodeCount,
   countsAvailable,
 }: {
   user: User;
+  /** The Headtower account matched to this tailnet user, if it signed in via OIDC. */
+  account: AppUser | null;
   nodeCount: number | null;
   countsAvailable: boolean;
 }) {
@@ -139,7 +194,7 @@ function UserRow({
     <Tr>
       <Td>
         <div className="flex items-center gap-3">
-          <Avatar user={user} />
+          <Avatar user={user} account={account} />
           <div className="flex min-w-0 flex-col leading-tight">
             <span className="truncate font-medium text-ink">{displayName}</span>
             {showHandle && (
@@ -163,7 +218,15 @@ function UserRow({
         )}
       </Td>
       <Td>
-        {provider ? (
+        {account ? (
+          // Matched against a Headtower app_user: this person signed in via
+          // OIDC, which is a more specific (and more trustworthy) source than
+          // whatever Headscale itself might report below.
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Chip variant="beacon">SSO</Chip>
+            <Chip variant="default">{ROLE_LABELS[account.role]}</Chip>
+          </div>
+        ) : provider ? (
           <Chip mono variant="default">
             {provider}
           </Chip>
@@ -178,24 +241,14 @@ function UserRow({
   );
 }
 
-function Avatar({ user }: { user: User }) {
+function Avatar({ user, account }: { user: User; account: AppUser | null }) {
   const label = user.displayName?.trim() || user.name || "?";
-  const src = user.profilePicUrl?.trim();
+  // Prefer the matched Headtower account's OIDC picture; fall back to
+  // whatever Headscale itself has on file for the user.
+  const src = account?.picture?.trim() || user.profilePicUrl?.trim();
 
   if (src) {
-    return (
-      // Avatars come from arbitrary OIDC providers; a plain img avoids
-      // per-host remote-image config. Decorative, so alt is empty.
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={src}
-        alt=""
-        width={28}
-        height={28}
-        loading="lazy"
-        className="h-7 w-7 shrink-0 rounded-md border border-line object-cover"
-      />
-    );
+    return <AvatarImage src={src} fallback={initialOf(label)} />;
   }
 
   return (
