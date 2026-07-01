@@ -77,10 +77,18 @@ main img {
 }
 
 .medium-zoom-overlay {
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  /* medium-zoom ships with no z-index of its own, so Nextra's sticky navbar
+     (which does set one) was winning the stacking order and cutting off the
+     top of the zoomed image. Above everything, including the navbar. */
+  z-index: 1000;
+  /* medium-zoom sets `background` itself as an inline style (see
+     components/zoom-images.jsx) - an inline style always wins over a
+     stylesheet rule, so tune the dim level there, not here. */
+  backdrop-filter: blur(48px);
+  -webkit-backdrop-filter: blur(48px);
 }
 .medium-zoom-image--opened {
+  z-index: 1001;
   border-radius: 10px;
   cursor: zoom-out;
 }

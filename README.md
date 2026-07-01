@@ -14,14 +14,13 @@ Feature-rich, self-hosted, and configured from Docker Compose - no setup wizard 
 
 Headtower is a control panel for [Headscale](https://github.com/juanfont/headscale), the open-source [Tailscale](https://tailscale.com) control server. It behaves like an operator's instrument panel - schematic, precise, and honest about state - rather than a marketing dashboard.
 
-<p align="center">
-  <img src="https://headtower.niheshr.com/screenshots/dashboard.png" width="49%" alt="Dashboard" />
-  <img src="https://headtower.niheshr.com/screenshots/machines.png" width="49%" alt="Machines" />
-</p>
-<p align="center">
-  <img src="https://headtower.niheshr.com/screenshots/access-control.png" width="49%" alt="Access" />
-  <img src="https://headtower.niheshr.com/screenshots/command-palette.png" width="49%" alt="Command palette" />
-</p>
+![Dashboard](https://headtower.niheshr.com/screenshots/dashboard.png)
+
+![Machines](https://headtower.niheshr.com/screenshots/machines.png)
+
+![Access](https://headtower.niheshr.com/screenshots/access-control.png)
+
+![Command palette](https://headtower.niheshr.com/screenshots/command-palette.png)
 
 More in the [full screenshot gallery](https://headtower.niheshr.com/screenshots).
 

@@ -16,7 +16,7 @@ export function ZoomImages() {
 
   useEffect(() => {
     const zoom = mediumZoom("main img", {
-      background: "rgba(13, 14, 18, 0.72)",
+      background: "rgba(10, 12, 15, 0.82)",
     });
     return () => zoom.detach();
   }, [pathname]);
