@@ -1,5 +1,6 @@
 import { TriangleAlert, UsersRound } from "lucide-react";
 import { nodes, users, type User } from "@/lib/headscale";
+import { withoutAgentNodes } from "@/lib/agent-node";
 import { sessionCan } from "@/lib/authz";
 import { Card } from "@/components/ui/card";
 import { Chip } from "@/components/ui/chip";
@@ -33,7 +34,9 @@ async function loadUsers(): Promise<UsersData> {
   // because the node read failed. Null signals "unavailable" to the table.
   let nodeCounts: Map<string, number> | null = null;
   try {
-    const nodeList = await nodes.list();
+    // The agent's own tailnet node is infrastructure, not a user's device —
+    // exclude it from per-user tallies.
+    const nodeList = withoutAgentNodes(await nodes.list());
     nodeCounts = new Map();
     for (const node of nodeList) {
       const ownerId = node.user?.id;

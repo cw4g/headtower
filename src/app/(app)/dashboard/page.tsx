@@ -4,6 +4,7 @@ import { ArrowRight, RadioTower, ServerOff } from "lucide-react";
 import { nodes as nodesApi, users as usersApi } from "@/lib/headscale";
 import type { Node, User } from "@/lib/headscale";
 import { getAgentPeers } from "@/lib/agent";
+import { withoutAgentNodes } from "@/lib/agent-node";
 import {
   toNodeView,
   nowMs,
@@ -327,11 +328,14 @@ export default async function DashboardPage() {
   try {
     // Agent enrichment is best-effort and fails quiet, so fetch it alongside the
     // tailnet state; an absent sidecar just yields an empty index.
-    const [nodeList, userList, agents] = await Promise.all([
+    const [rawNodeList, userList, agents] = await Promise.all([
       nodesApi.list(),
       usersApi.list(),
       getAgentPeers(),
     ]);
+    // The agent's own tailnet node is infrastructure, not a device — hide it
+    // from coverage, counts, and the attention feed.
+    const nodeList = withoutAgentNodes(rawNodeList);
     nodes = nodeList;
     users = userList;
     views = nodeList.map((node) =>

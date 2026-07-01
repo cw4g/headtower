@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { Server } from "lucide-react";
 import { nodes as nodesApi } from "@/lib/headscale";
 import { getAgentPeers } from "@/lib/agent";
+import { withoutAgentNodes } from "@/lib/agent-node";
 import {
   toNodeView,
   nowMs,
@@ -37,10 +38,12 @@ export default async function MachinesPage() {
   try {
     // Agent enrichment is best-effort and fails quiet, so fetch it alongside the
     // node list; an absent sidecar just yields an empty index.
-    const [list, agents] = await Promise.all([
+    const [rawList, agents] = await Promise.all([
       nodesApi.list(),
       getAgentPeers(),
     ]);
+    // The agent's own tailnet node is infrastructure, not a device — hide it.
+    const list = withoutAgentNodes(rawList);
     views = list
       .map((node) =>
         toNodeView(node, now, agents.lookup(node.name, node.ipAddresses ?? [])),
