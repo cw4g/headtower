@@ -17,32 +17,9 @@ import {
   matchesStatus,
   reachabilitySeries,
   MACHINE_STATUS_FILTERS,
-  type DotStatus,
   type StatusFilter,
   type NodeView,
 } from "@/lib/machines";
-
-/**
- * Left-edge stripe color per status - a layer on top of `nodeDot()`'s plain
- * online/offline split with the expiry warning folded in, since the card
- * already surfaces "expiring soon" as its own chip alongside the dot. Idle
- * (offline, nothing wrong) stays a structural line color rather than a status
- * hue - a quiet card shouldn't read as an alarm.
- */
-const EDGE_STRIPE_CLASS: Record<DotStatus, string> = {
-  online: "bg-online-500",
-  warn: "bg-warn-500",
-  critical: "bg-critical-500",
-  idle: "bg-line-strong",
-};
-
-function edgeStatus(
-  node: Pick<NodeView, "online" | "expired" | "expiresSoon">,
-): DotStatus {
-  if (node.expired) return "critical";
-  if (node.expiresSoon) return "warn";
-  return node.online ? "online" : "idle";
-}
 
 /**
  * The card-grid presentation of the machines list: a denser, host-oriented read
@@ -241,7 +218,6 @@ function HostCard({
   canManage: boolean;
 }) {
   const dot = nodeDot(node);
-  const edge = edgeStatus(node);
   const series = React.useMemo(
     () => reachabilitySeries(node, nowMs),
     [node, nowMs],
@@ -284,17 +260,6 @@ function HostCard({
           canManage && "pr-9",
         )}
       >
-        {/* Status-edge stripe: a flush color rail reading the node's state at
-            a glance, before any label is read. `overflow-hidden` above clips
-            it to the card's rounded corners. */}
-        <div
-          aria-hidden
-          className={cn(
-            "pointer-events-none absolute inset-y-0 left-0 w-[3px]",
-            EDGE_STRIPE_CLASS[edge],
-          )}
-        />
-
         {/* Identity: status dot + name, with agent OS / version to the right. */}
         <div className="flex items-start justify-between gap-2">
           <div className="flex min-w-0 items-start gap-2">
