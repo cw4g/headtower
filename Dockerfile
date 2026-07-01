@@ -16,6 +16,9 @@ WORKDIR /app
 RUN corepack enable
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Optional sub-path mount baked in at build time (e.g. /admin).
+ARG HEADTOWER_BASE_PATH=""
+ENV HEADTOWER_BASE_PATH=$HEADTOWER_BASE_PATH
 RUN pnpm build
 
 FROM node:24-slim AS runner

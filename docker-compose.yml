@@ -1,6 +1,10 @@
 services:
   headtower:
-    build: .
+    build:
+      context: .
+      args:
+        # Sub-path mount, e.g. HEADTOWER_BASE_PATH=/admin (from .env).
+        HEADTOWER_BASE_PATH: "${HEADTOWER_BASE_PATH:-}"
     container_name: headtower
     restart: unless-stopped
     ports:
