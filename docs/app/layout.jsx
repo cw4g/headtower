@@ -5,6 +5,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "nextra-theme-docs/style.css";
 import "./globals.css";
 import { BeaconMark } from "../components/beacon-mark.jsx";
+import { ZoomImages } from "../components/zoom-images.jsx";
 
 // Geist for the UI, Geist Mono for code and data - the same typographic pairing
 // as the Headtower console, so the docs read as part of the product.
@@ -127,9 +128,9 @@ export default async function RootLayout({ children }) {
         backgroundColor={{ dark: "#0e1117", light: "#fbfaf8" }}
       >
         <meta name="theme-color" content="#0e1117" />
+        {/* Static, hand-authored JSON, no user input. */}
         <script
           type="application/ld+json"
-          // eslint-disable-next-line react/no-danger -- static, hand-authored JSON, no user input.
           dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }}
         />
       </Head>
@@ -146,6 +147,7 @@ export default async function RootLayout({ children }) {
         >
           {children}
         </Layout>
+        <ZoomImages />
       </body>
     </html>
   );

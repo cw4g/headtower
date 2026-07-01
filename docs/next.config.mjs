@@ -12,6 +12,13 @@ export default withNextra({
   // Static HTML export: GitHub Pages only serves files, no Node server. The
   // custom domain (headtower.niheshr.com) sits at the root, so no basePath.
   output: "export",
+  // next/image's on-demand resize endpoint (/_next/image) needs a running
+  // server - there isn't one under a static export, so every content image
+  // 404'd. This makes next/image (which Nextra's default `img` MDX component
+  // uses) fall back to the original file directly, no resizing.
+  images: {
+    unoptimized: true,
+  },
   // Pin the workspace root to this directory so Next never climbs into the
   // Headtower app one level up (there are lockfiles in both places). Keeps the
   // docs build fully self-contained.
