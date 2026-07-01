@@ -15,9 +15,14 @@
  * Env bootstrap (all optional now):
  *   HEADSCALE_URL, HEADSCALE_API_KEY
  *   HEADTOWER_OIDC_ISSUER, HEADTOWER_OIDC_CLIENT_ID, HEADTOWER_OIDC_CLIENT_SECRET
+ *   HEADTOWER_AGENT_URL, HEADTOWER_AGENT_SSH_SECRET
  *   HEADTOWER_SECRET   - when set, secrets written to the DB are encrypted at rest
  *                        (AES-256-GCM, key = sha256(secret)); when absent they are
  *                        stored in plaintext (documented, see {@link encodeSecret}).
+ *
+ * The Headscale login-server URL (`headscale.login_server_url`, the public URL
+ * tailnet clients use for `tailscale up --login-server`) and the agent's enabled
+ * flag (`agent.enabled`) are DB-only settings with no env bootstrap.
  *
  * Writes go through {@link setConfig} (validated) or {@link setRawSetting} (raw);
  * {@link testHeadscaleConnection} performs a live probe used by the wizard.
@@ -42,6 +47,7 @@ import {
 } from "@/lib/db/settings";
 import { ConfigError } from "./types";
 import type {
+  AgentConfig,
   ConfigSource,
   HeadscaleConfig,
   HeadtowerConfig,
@@ -53,6 +59,7 @@ import type {
 // module - and `node:sqlite` - into the browser bundle.
 export { ConfigError } from "./types";
 export type {
+  AgentConfig,
   ConfigSource,
   HeadscaleConfig,
   HeadtowerConfig,
@@ -63,9 +70,13 @@ export type {
 export const SETTING_KEYS = {
   headscaleUrl: "headscale.url",
   headscaleApiKey: "headscale.api_key",
+  headscaleLoginServerUrl: "headscale.login_server_url",
   oidcIssuer: "oidc.issuer",
   oidcClientId: "oidc.client_id",
   oidcClientSecret: "oidc.client_secret",
+  agentUrl: "agent.url",
+  agentSshSecret: "agent.ssh_secret",
+  agentEnabled: "agent.enabled",
 } as const;
 
 function assertServer(): void {
@@ -198,12 +209,19 @@ export function getConfig(): HeadtowerConfig {
   const dbKey = stored[SETTING_KEYS.headscaleApiKey];
   const apiKey = dbKey != null ? decodeSecret(dbKey) : (readEnv("HEADSCALE_API_KEY") ?? null);
 
+  // The public login-server URL tailnet clients use (`tailscale up --login-server`),
+  // distinct from `url` above which may be an internal-only admin API address. No
+  // env bootstrap - DB only - and falls back to `url` itself when unset/empty.
+  const dbLoginServerUrl = stored[SETTING_KEYS.headscaleLoginServerUrl];
+
   let headscale: HeadscaleConfig | null = null;
   let headscaleSource: ConfigSource = "none";
   if (url && apiKey) {
     const normalized = tryNormalizeUrl(url);
     if (normalized) {
-      headscale = { url: normalized, apiKey };
+      const loginServerUrl =
+        (dbLoginServerUrl ? tryNormalizeUrl(dbLoginServerUrl) : null) ?? normalized;
+      headscale = { url: normalized, apiKey, loginServerUrl };
       headscaleSource = dbUrl != null || dbKey != null ? "db" : "env";
     }
   }
@@ -229,9 +247,27 @@ export function getConfig(): HeadtowerConfig {
     }
   }
 
+  // --- Agent sidecar (env fallback -> DB override; "enabled" defaults to
+  // "a url is configured" when no explicit agent.enabled setting exists) ---
+  const dbAgentUrl = stored[SETTING_KEYS.agentUrl];
+  const rawAgentUrl = dbAgentUrl ?? readEnv("HEADTOWER_AGENT_URL");
+  const agentUrl = rawAgentUrl ? tryNormalizeUrl(rawAgentUrl) : null;
+
+  const dbAgentSecret = stored[SETTING_KEYS.agentSshSecret];
+  const agentSshSecret =
+    dbAgentSecret != null
+      ? decodeSecret(dbAgentSecret)
+      : (readEnv("HEADTOWER_AGENT_SSH_SECRET") ?? null);
+
+  const dbAgentEnabled = stored[SETTING_KEYS.agentEnabled];
+  const agentEnabled = dbAgentEnabled != null ? dbAgentEnabled === "true" : agentUrl !== null;
+
+  const agent: AgentConfig = { url: agentUrl, enabled: agentEnabled, sshSecret: agentSshSecret };
+
   return {
     headscale,
     oidc,
+    agent,
     sources: { headscale: headscaleSource, oidc: oidcSource },
   };
 }
@@ -247,8 +283,25 @@ export function hasHeadscaleConnection(): boolean {
 
 /** A partial configuration update. Pass `null` for a section to clear it. */
 export interface ConfigInput {
-  headscale?: { url: string; apiKey: string } | null;
+  headscale?: {
+    url: string;
+    apiKey: string;
+    /**
+     * The public login-server URL. `undefined` leaves the stored value
+     * untouched; `null` (or an empty string) clears it back to the fallback
+     * (`url`); a non-empty string validates and stores it.
+     */
+    loginServerUrl?: string | null;
+  } | null;
   oidc?: { issuer: string; clientId: string; clientSecret: string } | null;
+  agent?: {
+    url: string;
+    /** `undefined` leaves the stored value untouched (so "enabled" keeps
+     *  defaulting to "a url is configured"). */
+    enabled?: boolean;
+    /** `undefined` leaves the stored secret untouched; `null`/"" clears it. */
+    sshSecret?: string | null;
+  } | null;
 }
 
 /**
@@ -264,6 +317,7 @@ export function setConfig(input: ConfigInput): void {
     if (input.headscale === null) {
       deleteSetting(SETTING_KEYS.headscaleUrl);
       deleteSetting(SETTING_KEYS.headscaleApiKey);
+      deleteSetting(SETTING_KEYS.headscaleLoginServerUrl);
     } else {
       const apiKey = input.headscale.apiKey.trim();
       if (!apiKey) throw new ConfigError("A Headscale API key is required.");
@@ -272,6 +326,18 @@ export function setConfig(input: ConfigInput): void {
         normalizeUrl("Headscale URL", input.headscale.url),
       );
       writeSetting(SETTING_KEYS.headscaleApiKey, encodeSecret(apiKey));
+
+      if (input.headscale.loginServerUrl !== undefined) {
+        const loginServerUrl = input.headscale.loginServerUrl?.trim();
+        if (!loginServerUrl) {
+          deleteSetting(SETTING_KEYS.headscaleLoginServerUrl);
+        } else {
+          writeSetting(
+            SETTING_KEYS.headscaleLoginServerUrl,
+            normalizeUrl("Login server URL", loginServerUrl),
+          );
+        }
+      }
     }
   }
 
@@ -289,6 +355,31 @@ export function setConfig(input: ConfigInput): void {
       writeSetting(SETTING_KEYS.oidcIssuer, normalizeUrl("OIDC issuer", input.oidc.issuer));
       writeSetting(SETTING_KEYS.oidcClientId, clientId);
       writeSetting(SETTING_KEYS.oidcClientSecret, encodeSecret(clientSecret));
+    }
+  }
+
+  if (input.agent !== undefined) {
+    if (input.agent === null) {
+      deleteSetting(SETTING_KEYS.agentUrl);
+      deleteSetting(SETTING_KEYS.agentSshSecret);
+      deleteSetting(SETTING_KEYS.agentEnabled);
+    } else {
+      const url = input.agent.url.trim();
+      if (!url) throw new ConfigError("An agent URL is required.");
+      writeSetting(SETTING_KEYS.agentUrl, normalizeUrl("Agent URL", url));
+
+      if (input.agent.sshSecret !== undefined) {
+        const sshSecret = input.agent.sshSecret?.trim();
+        if (!sshSecret) {
+          deleteSetting(SETTING_KEYS.agentSshSecret);
+        } else {
+          writeSetting(SETTING_KEYS.agentSshSecret, encodeSecret(sshSecret));
+        }
+      }
+
+      if (input.agent.enabled !== undefined) {
+        writeSetting(SETTING_KEYS.agentEnabled, input.agent.enabled ? "true" : "false");
+      }
     }
   }
 }

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Activity,
+  Cpu,
   KeyRound,
   KeySquare,
   PlugZap,
@@ -50,6 +51,12 @@ const ITEMS: SettingsNavItem[] = [
     href: "/settings/diagnostics",
     icon: Activity,
     description: "Connection self-check",
+  },
+  {
+    label: "Agent",
+    href: "/settings/agent",
+    icon: Cpu,
+    description: "Sidecar + browser SSH",
   },
 ];
 

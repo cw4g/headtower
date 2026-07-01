@@ -1,10 +1,17 @@
 import * as React from "react";
 import Link from "next/link";
 import { ArrowRight, RadioTower, ServerOff } from "lucide-react";
-import { nodes as nodesApi, users as usersApi } from "@/lib/headscale";
-import type { Node, User } from "@/lib/headscale";
-import { getAgentPeers } from "@/lib/agent";
+import {
+  nodes as nodesApi,
+  preAuthKeys as preAuthKeysApi,
+  users as usersApi,
+} from "@/lib/headscale";
+import type { Node, PreAuthKey, User } from "@/lib/headscale";
+import { getAgentHealth, getAgentPeers } from "@/lib/agent";
 import { withoutAgentNodes } from "@/lib/agent-node";
+import { getConfig } from "@/lib/config";
+import { listAudit, type AuditEntry } from "@/lib/audit";
+import { sessionCan } from "@/lib/authz";
 import {
   toNodeView,
   nowMs,
@@ -25,6 +32,10 @@ import {
   type TimelineEvent,
 } from "@/components/charts";
 import { OnlineTrend } from "@/components/dashboard/online-trend";
+import { DeviceBreakdown } from "@/components/dashboard/device-breakdown";
+import { ExpiringSoon, type ExpiringItem } from "@/components/dashboard/expiring-soon";
+import { RecentActivity } from "@/components/dashboard/recent-activity";
+import { AgentWidget } from "@/components/dashboard/agent-widget";
 import { Surface } from "@/components/ui/surface";
 import { Card } from "@/components/ui/card";
 import { Chip } from "@/components/ui/chip";
@@ -43,6 +54,17 @@ const EXPIRY_PAST_WINDOW = 14 * DAY;
 const EXPIRY_FUTURE_WINDOW = 180 * DAY;
 // Cap the timeline so a large tailnet can't crowd the axis.
 const MAX_EXPIRY_EVENTS = 14;
+
+// The "Expiring soon" widget uses its own, tighter lookahead than the timeline
+// above - it exists to flag what needs renewing this week, not to chart the
+// whole upcoming schedule. Past-side it reuses EXPIRY_PAST_WINDOW so a
+// long-lapsed, forgotten key doesn't linger in the list forever.
+const EXPIRING_SOON_WINDOW = 7 * DAY;
+const MAX_EXPIRING_ITEMS = 8;
+
+// How many audit entries the Recent activity feed shows - a glance, not the
+// full trail (see /audit for that).
+const RECENT_ACTIVITY_LIMIT = 8;
 
 // --- formatting helpers ----------------------------------------------------
 
@@ -215,6 +237,108 @@ function expiryEvents(views: NodeView[], now: number): TimelineEvent[] {
   return events.sort((a, b) => a.time - b.time).slice(0, MAX_EXPIRY_EVENTS);
 }
 
+/**
+ * Agent-reported OS counts, as bar rows (nearest-value `topSlices` also serves
+ * a bar chart - both share the same `{ label, value, tone? }` shape). Unlike
+ * {@link platformDistribution}, this never falls back to registration method:
+ * it exists specifically to show what the agent knows, so an empty result
+ * means "no agent data", which the caller renders as its own hint.
+ */
+function osBreakdown(views: NodeView[]): BarDatum[] {
+  const counts = new Map<string, number>();
+  for (const view of views) {
+    const label = view.agent?.os?.trim();
+    if (label) counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  return topSlices(counts, 8);
+}
+
+/** Agent-reported Tailscale/client version counts, as bar rows. */
+function versionBreakdown(views: NodeView[]): BarDatum[] {
+  const counts = new Map<string, number>();
+  for (const view of views) {
+    const label = view.agent?.clientVersion?.trim();
+    if (label) counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  return topSlices(counts, 8);
+}
+
+/** The DeviceBreakdown empty-state copy, tailored to why there's nothing to show. */
+function breakdownHint(agentEnabled: boolean, noun: string): string {
+  return agentEnabled
+    ? `No agent-reported ${noun} yet. It appears once a device checks in.`
+    : `Turn on the agent below to see ${noun} here.`;
+}
+
+/**
+ * Node keys and pre-auth keys expiring within {@link EXPIRING_SOON_WINDOW}, or
+ * already lapsed within {@link EXPIRY_PAST_WINDOW} - a tighter, credential-
+ * focused sibling of the "Needs attention" list below, which is device-focused
+ * and doesn't cover pre-auth keys at all. Expired-first, then soonest-first.
+ */
+function expiringSoon(
+  views: NodeView[],
+  keys: PreAuthKey[],
+  now: number,
+): ExpiringItem[] {
+  const items: (ExpiringItem & { time: number })[] = [];
+
+  for (const view of views) {
+    if (!view.expiry) continue;
+    const t = Date.parse(view.expiry);
+    if (Number.isNaN(t)) continue;
+    if (t < now - EXPIRY_PAST_WINDOW || t > now + EXPIRING_SOON_WINDOW) continue;
+    items.push({
+      id: `node:${view.id}`,
+      kind: "Node key",
+      label: view.name,
+      owner: ownerLabel(view.user),
+      detail: `${view.expired ? "expired" : "expires"} ${relativeTime(view.expiry, now)}`,
+      expired: view.expired,
+      time: t,
+    });
+  }
+
+  for (const key of keys) {
+    // A single-use key that's already been consumed has nothing left to renew;
+    // its expiry is no longer an operator's problem.
+    if (key.used && !key.reusable) continue;
+    if (!key.expiration) continue;
+    const t = Date.parse(key.expiration);
+    if (Number.isNaN(t)) continue;
+    if (t < now - EXPIRY_PAST_WINDOW || t > now + EXPIRING_SOON_WINDOW) continue;
+    const expired = t <= now;
+    items.push({
+      id: `key:${key.id}`,
+      kind: "Pre-auth key",
+      label: `#${key.id}`,
+      owner: ownerLabel(key.user),
+      detail: `${expired ? "expired" : "expires"} ${relativeTime(key.expiration, now)}`,
+      expired,
+      time: t,
+    });
+  }
+
+  return items
+    .sort((a, b) => (a.expired === b.expired ? a.time - b.time : a.expired ? -1 : 1))
+    .slice(0, MAX_EXPIRING_ITEMS);
+}
+
+/**
+ * Read the most recent audit entries for the dashboard's activity feed.
+ * Best-effort, same contract as {@link captureTailnetSnapshot}: an unavailable
+ * local store (e.g. no database in this deployment) degrades to an empty feed
+ * rather than failing the page.
+ */
+async function recentAuditEntries(limit: number): Promise<AuditEntry[]> {
+  try {
+    const page = await listAudit({ limit });
+    return page.entries;
+  } catch {
+    return [];
+  }
+}
+
 // --- view primitives -------------------------------------------------------
 
 function Widget({
@@ -325,6 +449,7 @@ export default async function DashboardPage() {
   let nodes: Node[];
   let users: User[];
   let views: NodeView[];
+  let preAuthKeyList: PreAuthKey[];
   try {
     // Agent enrichment is best-effort and fails quiet, so fetch it alongside the
     // tailnet state; an absent sidecar just yields an empty index.
@@ -341,6 +466,17 @@ export default async function DashboardPage() {
     views = nodeList.map((node) =>
       toNodeView(node, now, agents.lookup(node.name, node.ipAddresses ?? [])),
     );
+
+    // Pre-auth keys for the "Expiring soon" widget, batched per user like the
+    // settings view: Headscale 0.26 - 0.28 only supports a per-user filter, so
+    // fetching per user and de-duping by id is the one approach that returns
+    // the full set across the whole supported range.
+    const keyBatches = await Promise.all(
+      userList.map((u) => preAuthKeysApi.list({ user: u.id })),
+    );
+    const keyById = new Map<string, PreAuthKey>();
+    for (const batch of keyBatches) for (const key of batch) keyById.set(key.id, key);
+    preAuthKeyList = [...keyById.values()];
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return (
@@ -401,6 +537,21 @@ export default async function DashboardPage() {
   const shown = attention.slice(0, 6);
   const overflow = attention.length - shown.length;
 
+  const osBars = osBreakdown(views);
+  const versionBars = versionBreakdown(views);
+  const expiringItems = expiringSoon(views, preAuthKeyList, now);
+
+  // Agent status + recent activity are independent of tailnet size, so they're
+  // read now that the control-plane fetch above has already succeeded. Neither
+  // call can throw: getAgentHealth() and sessionCan() report "unavailable" /
+  // "no" as values, and recentAuditEntries() is its own best-effort wrapper.
+  const agentConfig = getConfig().agent;
+  const [agentHealth, canWriteSettings, recentActivity] = await Promise.all([
+    getAgentHealth(),
+    sessionCan("settings.write"),
+    recentAuditEntries(RECENT_ACTIVITY_LIMIT),
+  ]);
+
   return (
     <div className="flex flex-col gap-6">
       <SectionHeading
@@ -447,6 +598,16 @@ export default async function DashboardPage() {
         <Stat label="Users" value={users.length} />
         <Stat label="Routes" value={routeCount} />
       </Surface>
+
+      {/* Agent sidecar: health readout + on/off, independent of tailnet size. */}
+      <Widget label="Agent">
+        <AgentWidget
+          health={agentHealth}
+          configured={agentConfig.url !== null}
+          enabled={agentConfig.enabled}
+          canWrite={canWriteSettings}
+        />
+      </Widget>
 
       {total === 0 ? (
         <EmptyState
@@ -512,6 +673,23 @@ export default async function DashboardPage() {
             </Widget>
           </div>
 
+          {/* Agent-reported device mix, degrading to a hint when the agent is
+              off or hasn't reported in yet. */}
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Widget label="Operating systems">
+              <DeviceBreakdown
+                bars={osBars}
+                emptyHint={breakdownHint(agentConfig.enabled, "operating systems")}
+              />
+            </Widget>
+            <Widget label="Client versions">
+              <DeviceBreakdown
+                bars={versionBars}
+                emptyHint={breakdownHint(agentConfig.enabled, "client versions")}
+              />
+            </Widget>
+          </div>
+
           {/* Upcoming key expiries. */}
           <Widget label="Key expiry">
             {expiries.length > 0 ? (
@@ -527,6 +705,11 @@ export default async function DashboardPage() {
                 {Math.round(EXPIRY_FUTURE_WINDOW / DAY)} days.
               </WidgetNote>
             )}
+          </Widget>
+
+          {/* Node keys and pre-auth keys due for renewal this week. */}
+          <Widget label="Expiring soon">
+            <ExpiringSoon items={expiringItems} />
           </Widget>
 
           {/* Needs attention. */}
@@ -600,6 +783,23 @@ export default async function DashboardPage() {
           </section>
         </>
       )}
+
+      {/* Recent activity: local operator history, independent of tailnet size. */}
+      <section className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-sm font-medium text-ink">Recent activity</h2>
+          <Link
+            href="/audit"
+            className="flex items-center gap-1 text-xs text-ink-muted transition-colors hover:text-ink"
+          >
+            Full audit trail
+            <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+          </Link>
+        </div>
+        <Card>
+          <RecentActivity entries={recentActivity} now={now} />
+        </Card>
+      </section>
     </div>
   );
 }

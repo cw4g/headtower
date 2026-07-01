@@ -8,7 +8,7 @@ import {
   EyeOff,
   KeyRound,
   Loader2,
-  RotateCw,
+  Pencil,
   ShieldCheck,
   TriangleAlert,
   X,
@@ -23,6 +23,56 @@ import { saveAuthentication, type SaveAuthInput } from "./actions";
 import type { SessionSecretState } from "./session-secret";
 
 type Mode = "operator" | "oidc";
+
+interface ProviderPreset {
+  id: string;
+  label: string;
+  /** Issuer URL to prefill. Blank leaves the field empty for the user to fill in. */
+  issuer: string;
+  /** Shown under the Issuer field once this preset is selected. */
+  hint?: string;
+}
+
+/**
+ * Common identity providers, OIDC-discovery compatible only (so no GitHub,
+ * which is OAuth2 without an OIDC discovery document). Selecting one only
+ * prefills the Issuer field below - it never touches client id or secret.
+ */
+const PROVIDER_PRESETS: ProviderPreset[] = [
+  { id: "google", label: "Google", issuer: "https://accounts.google.com" },
+  {
+    id: "entra",
+    label: "Microsoft Entra",
+    issuer: "https://login.microsoftonline.com/<tenant>/v2.0",
+    hint: 'Replace <tenant> with your Entra tenant ID, or "common" for multi-tenant apps.',
+  },
+  {
+    id: "okta",
+    label: "Okta",
+    issuer: "https://YOUR_DOMAIN.okta.com",
+    hint: "Replace YOUR_DOMAIN with your Okta org domain.",
+  },
+  {
+    id: "auth0",
+    label: "Auth0",
+    issuer: "https://YOUR_TENANT.auth0.com",
+    hint: "Replace YOUR_TENANT with your Auth0 tenant.",
+  },
+  {
+    id: "pocket-id",
+    label: "Pocket ID",
+    issuer: "",
+    hint: "Self-hosted. Enter your Pocket ID instance's URL, e.g. https://id.example.com.",
+  },
+  { id: "generic", label: "Generic OIDC", issuer: "" },
+];
+
+/** The preset whose issuer exactly matches, if any - used to highlight on load. */
+function matchingPreset(issuer: string): string | null {
+  const trimmed = issuer.trim();
+  if (!trimmed) return null;
+  return PROVIDER_PRESETS.find((p) => p.issuer !== "" && p.issuer === trimmed)?.id ?? null;
+}
 
 export interface AuthenticationFormProps {
   /** The identity model currently in effect. */
@@ -58,9 +108,12 @@ export function AuthenticationForm({
 }: AuthenticationFormProps) {
   const [mode, setMode] = React.useState<Mode>(initialMode);
   const [issuer, setIssuer] = React.useState(initialIssuer);
+  const [issuerPreset, setIssuerPreset] = React.useState<string | null>(() =>
+    matchingPreset(initialIssuer),
+  );
   const [clientId, setClientId] = React.useState(initialClientId);
 
-  const [rotating, setRotating] = React.useState(!secretStored);
+  const [changingSecret, setChangingSecret] = React.useState(!secretStored);
   const [clientSecret, setClientSecret] = React.useState("");
   const [reveal, setReveal] = React.useState(false);
 
@@ -68,9 +121,16 @@ export function AuthenticationForm({
   const [error, setError] = React.useState<string | null>(null);
   const [saved, setSaved] = React.useState<Mode | null>(null);
 
-  const secretInputOpen = rotating;
+  const secretInputOpen = changingSecret;
   const secretSatisfied = clientSecret.trim().length > 0 || secretStored;
   const sessionSecretOk = sessionSecret.status === "ok";
+  const issuerHint = PROVIDER_PRESETS.find((p) => p.id === issuerPreset)?.hint;
+
+  function selectPreset(preset: ProviderPreset) {
+    setIssuer(preset.issuer);
+    setIssuerPreset(preset.id);
+    reset();
+  }
 
   const oidcComplete =
     issuer.trim().length > 0 && clientId.trim().length > 0 && secretSatisfied;
@@ -102,7 +162,7 @@ export function AuthenticationForm({
         if (result.mode === "oidc") {
           setClientSecret("");
           setReveal(false);
-          setRotating(false); // A secret is now stored; collapse back to "set".
+          setChangingSecret(false); // A secret is now stored; collapse back to "set".
         }
       } else {
         setError(result.error);
@@ -159,7 +219,33 @@ export function AuthenticationForm({
             </p>
           )}
 
-          <Field label="Issuer URL" htmlFor="oidc-issuer">
+          <Field label="Identity provider">
+            <div className="flex flex-wrap gap-1.5" role="group" aria-label="Identity provider preset">
+              {PROVIDER_PRESETS.map((preset) => {
+                const isActive = issuerPreset === preset.id;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    disabled={!canWrite}
+                    aria-pressed={isActive}
+                    onClick={() => selectPreset(preset)}
+                    className={cn(
+                      "rounded-control border px-2.5 py-1 text-xs font-medium transition-colors",
+                      "disabled:pointer-events-none disabled:opacity-50",
+                      isActive
+                        ? "border-beacon-500 bg-beacon-500/10 text-beacon-500"
+                        : "border-line-strong bg-surface text-ink-muted hover:bg-surface-2 hover:text-ink",
+                    )}
+                  >
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
+          </Field>
+
+          <Field label="Issuer URL" htmlFor="oidc-issuer" description={issuerHint}>
             <Input
               id="oidc-issuer"
               mono
@@ -170,6 +256,7 @@ export function AuthenticationForm({
               placeholder="https://id.example.com"
               onChange={(e) => {
                 setIssuer(e.target.value);
+                setIssuerPreset(matchingPreset(e.target.value));
                 reset();
               }}
             />
@@ -211,7 +298,7 @@ export function AuthenticationForm({
                     spellCheck={false}
                     autoComplete="off"
                     disabled={!canWrite}
-                    placeholder={secretStored ? "Paste a new secret to rotate" : "Client secret"}
+                    placeholder={secretStored ? "Paste a new secret" : "Client secret"}
                     className="pr-10"
                     onChange={(e) => {
                       setClientSecret(e.target.value);
@@ -235,7 +322,7 @@ export function AuthenticationForm({
                   <button
                     type="button"
                     onClick={() => {
-                      setRotating(false);
+                      setChangingSecret(false);
                       setClientSecret("");
                       setReveal(false);
                       reset();
@@ -243,7 +330,7 @@ export function AuthenticationForm({
                     className="inline-flex w-fit items-center gap-1.5 text-xs text-ink-muted transition-colors hover:text-ink"
                   >
                     <X className="h-3.5 w-3.5" aria-hidden />
-                    Keep the current secret
+                    Cancel
                   </button>
                 )}
               </div>
@@ -260,13 +347,13 @@ export function AuthenticationForm({
                   <button
                     type="button"
                     onClick={() => {
-                      setRotating(true);
+                      setChangingSecret(true);
                       reset();
                     }}
                     className="inline-flex items-center gap-1.5 text-xs font-medium text-beacon-500 transition-colors hover:text-beacon-400"
                   >
-                    <RotateCw className="h-3.5 w-3.5" aria-hidden />
-                    Rotate secret
+                    <Pencil className="h-3.5 w-3.5" aria-hidden />
+                    Change secret
                   </button>
                 )}
               </div>
@@ -332,8 +419,10 @@ function SessionSecretNote({ state }: { state: SessionSecretState }) {
         <StatusDot status="online" className="mt-0.5" />
         <span>
           <span className="text-ink">Session secret is set</span> ({state.length}{" "}
-          chars). OIDC signs its session cookie with HEADTOWER_SESSION_SECRET, an
-          environment-only value.
+          chars). This is separate from the client secret above - it signs the
+          login cookie and is read from the HEADTOWER_SESSION_SECRET
+          environment variable. To change it, update that variable in your
+          environment and redeploy (which signs everyone out).
         </span>
       </div>
     );

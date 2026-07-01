@@ -42,6 +42,7 @@ import { StatusDot } from "@/components/ui/status-dot";
 import { CopyButton } from "@/components/ui/copy-button";
 import { ConnectionError } from "@/components/machines/connection-error";
 import { NodeActions } from "@/components/machines/node-actions";
+import { NodeActionsMenu } from "@/components/machines/node-actions-menu";
 import { TerminalAction } from "@/components/machines/terminal-action";
 import { humanizeAction, summarizeDetail } from "../../audit/format";
 import { cn } from "@/lib/cn";
@@ -152,6 +153,7 @@ function MachineDetail({
         view={view}
         dot={dot}
         now={now}
+        canManage={canManage}
         canSsh={canSsh}
         sshHost={sshHost}
       />
@@ -193,12 +195,14 @@ function DetailHeader({
   view,
   dot,
   now,
+  canManage,
   canSsh,
   sshHost,
 }: {
   view: NodeView;
   dot: { status: "online" | "warn" | "critical" | "idle"; label: string };
   now: number;
+  canManage: boolean;
   canSsh: boolean;
   sshHost: string | null;
 }) {
@@ -228,6 +232,14 @@ function DetailHeader({
 
         <div className="flex items-center gap-3">
           {canSsh && sshHost && <TerminalAction id={view.id} name={view.name} />}
+          {canManage && (
+            <NodeActionsMenu
+              nodeId={view.id}
+              name={view.name}
+              tags={view.tags}
+              redirectAfterDelete="/machines"
+            />
+          )}
           <span className="data text-xs text-ink-faint">#{view.id}</span>
         </div>
       </div>

@@ -16,6 +16,7 @@ import { StatusDot } from "@/components/ui/status-dot";
 import { Chip, Tag } from "@/components/ui/chip";
 import { Input } from "@/components/ui/field";
 import { Kbd } from "@/components/ui/kbd";
+import { NodeActionsMenu } from "@/components/machines/node-actions-menu";
 import { cn } from "@/lib/cn";
 import {
   nodeDot,
@@ -27,7 +28,18 @@ import {
   type NodeView,
 } from "@/lib/machines";
 
-export function MachinesTable({ nodes }: { nodes: NodeView[] }) {
+export function MachinesTable({
+  nodes,
+  canManage = false,
+}: {
+  nodes: NodeView[];
+  /**
+   * Gates the per-row actions column. Computed server-side via
+   * `sessionCan("machines.write")` and passed down from the page, matching
+   * how the node detail page gates its own Actions card.
+   */
+  canManage?: boolean;
+}) {
   const router = useRouter();
   const [query, setQuery] = React.useState("");
   const [status, setStatus] = React.useState<StatusFilter>("all");
@@ -63,6 +75,9 @@ export function MachinesTable({ nodes }: { nodes: NodeView[] }) {
     () => nodes.filter((n) => n.online && !n.expired).length,
     [nodes],
   );
+
+  // One extra column for the actions kebab when the session can manage nodes.
+  const columnCount = canManage ? 8 : 7;
 
   return (
     <div className="flex flex-col gap-3">
@@ -171,15 +186,20 @@ export function MachinesTable({ nodes }: { nodes: NodeView[] }) {
               <Th>Addresses</Th>
               <Th>Tags</Th>
               <Th>Routes</Th>
-              <Th className="pr-4" align="right">
+              <Th className={canManage ? undefined : "pr-4"} align="right">
                 Last seen
               </Th>
+              {canManage && (
+                <Th className="pr-4" align="right">
+                  <span className="sr-only">Actions</span>
+                </Th>
+              )}
             </Tr>
           </TableHead>
           <TableBody>
             {filtered.length === 0 ? (
               <Tr className="hover:bg-transparent">
-                <Td colSpan={7} className="py-10 text-center">
+                <Td colSpan={columnCount} className="py-10 text-center">
                   <p className="text-sm text-ink-muted">No machines match.</p>
                   <button
                     type="button"
@@ -198,6 +218,7 @@ export function MachinesTable({ nodes }: { nodes: NodeView[] }) {
                 <MachineRow
                   key={node.id}
                   node={node}
+                  canManage={canManage}
                   onOpen={() => router.push(`/machines/${node.id}`)}
                 />
               ))
@@ -211,9 +232,11 @@ export function MachinesTable({ nodes }: { nodes: NodeView[] }) {
 
 function MachineRow({
   node,
+  canManage,
   onOpen,
 }: {
   node: NodeView;
+  canManage: boolean;
   onOpen: () => void;
 }) {
   const dot = nodeDot(node);
@@ -347,7 +370,7 @@ function MachineRow({
       </Td>
 
       {/* Last seen */}
-      <Td className="pr-4" align="right">
+      <Td className={canManage ? undefined : "pr-4"} align="right">
         {node.online ? (
           <span className="inline-flex items-center gap-1 text-xs text-online-600">
             <SignalHigh className="h-3.5 w-3.5" aria-hidden />
@@ -359,6 +382,18 @@ function MachineRow({
           </span>
         )}
       </Td>
+
+      {/* Actions - own click handler so it doesn't also trigger the row's onOpen. */}
+      {canManage && (
+        <Td className="pr-4" align="right" onClick={(e) => e.stopPropagation()}>
+          <NodeActionsMenu
+            nodeId={node.id}
+            name={node.name}
+            tags={node.tags}
+            className="ml-auto"
+          />
+        </Td>
+      )}
     </Tr>
   );
 }

@@ -1,17 +1,21 @@
 /**
  * Headtower agent reader (server-only).
  *
- * When `HEADTOWER_AGENT_URL` is set, {@link getAgentPeers} fetches the sidecar's
- * `/peers` JSON, projects it into a tolerant {@link AgentPeer} list, and returns
- * an index keyed by hostname + address. The agent is optional enrichment, so the
- * read is deliberately forgiving: a short timeout, no throwing, and an empty
- * index on any miss (unset URL, network error, bad status, unparseable body).
+ * When the agent is configured and enabled (see {@link agentBaseUrl}),
+ * {@link getAgentPeers} fetches the sidecar's `/peers` JSON, projects it into a
+ * tolerant {@link AgentPeer} list, and returns an index keyed by hostname +
+ * address. {@link getAgentHealth} hits its `/healthz` liveness probe for the
+ * settings UI. The agent is optional enrichment, so both reads are deliberately
+ * forgiving: a short timeout, no throwing, and a quiet "unavailable" result on
+ * any miss (unset/disabled, network error, bad status, unparseable body).
  * Callers merge whatever comes back and render the same either way.
  *
- * SERVER-ONLY: reads `process.env` and talks to the sidecar directly. Import it
- * from Server Components / Server Actions, never from a client component.
+ * SERVER-ONLY: reads `@/lib/config` (and so `node:sqlite`) and talks to the
+ * sidecar directly. Import it from Server Components / Server Actions, never
+ * from a client component.
  */
 
+import { getConfig } from "@/lib/config";
 import type { AgentPeer, AgentPeerIndex } from "./types";
 
 export type { AgentPeer, AgentPeerIndex } from "./types";
@@ -25,9 +29,15 @@ const EMPTY_INDEX: AgentPeerIndex = {
   lookup: () => null,
 };
 
-/** The configured agent base URL (trailing slash trimmed), or null when unset. */
+/**
+ * The configured agent base URL (trailing slash trimmed), or null when unset
+ * or explicitly disabled (`agent.enabled === false`). Config value wins over
+ * the raw env var - see `@/lib/config` for the env fallback + DB override.
+ */
 function agentBaseUrl(): string | null {
-  const raw = process.env.HEADTOWER_AGENT_URL?.trim();
+  const agent = getConfig().agent;
+  if (agent?.enabled === false) return null;
+  const raw = agent?.url?.trim();
   if (!raw) return null;
   return raw.replace(/\/+$/, "");
 }
@@ -158,6 +168,64 @@ export async function getAgentPeers(): Promise<AgentPeerIndex> {
   } catch {
     // Fail quiet: a flaky/absent sidecar must not degrade the machines view.
     return EMPTY_INDEX;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** A liveness result for the settings UI. Never throws; unreachable is a value. */
+export interface AgentHealth {
+  reachable: boolean;
+  status?: string;
+  service?: string;
+  latencyMs?: number;
+  error?: string;
+}
+
+/**
+ * Probe the agent's `/healthz`. Returns a plain result the settings panel can
+ * render: reachable with the reported service/status and a round-trip time, or
+ * `reachable: false` with a short reason when the agent is unset, turned off, or
+ * unreachable. Same short timeout and fail-quiet contract as {@link getAgentPeers}.
+ */
+export async function getAgentHealth(): Promise<AgentHealth> {
+  const base = agentBaseUrl();
+  if (!base) {
+    const disabled = getConfig().agent?.enabled === false;
+    return {
+      reachable: false,
+      error: disabled ? "Agent is turned off" : "No agent URL is configured",
+    };
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), AGENT_TIMEOUT_MS);
+  const startedAt = Date.now();
+  try {
+    const response = await fetch(`${base}/healthz`, {
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+      cache: "no-store",
+    });
+    const latencyMs = Date.now() - startedAt;
+    if (!response.ok) {
+      return {
+        reachable: false,
+        latencyMs,
+        error: `Agent returned HTTP ${response.status}`,
+      };
+    }
+    const json: unknown = await response.json();
+    const body =
+      json && typeof json === "object" ? (json as Record<string, unknown>) : {};
+    return {
+      reachable: true,
+      latencyMs,
+      service: asString(body.service) ?? undefined,
+      status: asString(body.status) ?? undefined,
+    };
+  } catch {
+    return { reachable: false, error: "Agent is unreachable" };
   } finally {
     clearTimeout(timer);
   }

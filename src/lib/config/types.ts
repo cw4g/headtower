@@ -21,6 +21,13 @@ export interface HeadscaleConfig {
   readonly url: string;
   /** API key used to authenticate against the Headscale REST API. */
   readonly apiKey: string;
+  /**
+   * PUBLIC URL tailnet clients use for `tailscale up --login-server`, e.g.
+   * `https://hs.example.com`. Distinct from `url`, which is the (possibly
+   * internal-only, e.g. `http://host.docker.internal:8080`) admin API address.
+   * Resolved: falls back to `url` when no login-server URL is configured.
+   */
+  readonly loginServerUrl: string;
 }
 
 export interface OidcConfig {
@@ -28,6 +35,16 @@ export interface OidcConfig {
   readonly issuer: string;
   readonly clientId: string;
   readonly clientSecret: string;
+}
+
+/** The optional Headtower agent sidecar (see `@/lib/agent`). */
+export interface AgentConfig {
+  /** Base URL of the agent sidecar, or null when unconfigured. */
+  readonly url: string | null;
+  /** Whether the agent should be used. Defaults to `url !== null` when unset. */
+  readonly enabled: boolean;
+  /** Shared HMAC secret for the agent's `/ssh` bridge, or null when unset. */
+  readonly sshSecret: string | null;
 }
 
 /** Where a resolved value came from: the DB store, the env bootstrap, or nowhere. */
@@ -38,6 +55,8 @@ export interface HeadtowerConfig {
   readonly headscale: HeadscaleConfig | null;
   /** OIDC provider config, or null when running in operator (API-key) mode. */
   readonly oidc: OidcConfig | null;
+  /** The optional agent sidecar; always present, `url` is null when unset. */
+  readonly agent: AgentConfig;
   /** Provenance of each part, for the setup UI to explain what it inherited. */
   readonly sources: {
     readonly headscale: ConfigSource;

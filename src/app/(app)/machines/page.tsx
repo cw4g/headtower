@@ -1,8 +1,9 @@
 import { cookies } from "next/headers";
 import { Server } from "lucide-react";
-import { nodes as nodesApi } from "@/lib/headscale";
+import { nodes as nodesApi, users as usersApi } from "@/lib/headscale";
 import { getAgentPeers } from "@/lib/agent";
 import { withoutAgentNodes } from "@/lib/agent-node";
+import { sessionCan } from "@/lib/authz";
 import {
   toNodeView,
   nowMs,
@@ -16,6 +17,10 @@ import { MachinesTable } from "@/components/machines/machines-table";
 import { MachinesCards } from "@/components/machines/machines-cards";
 import { MachinesViewToggle } from "@/components/machines/machines-view-toggle";
 import { ConnectionError } from "@/components/machines/connection-error";
+import {
+  AddDeviceDialog,
+  type UserOption,
+} from "@/components/machines/add-device-dialog";
 
 // The console reports live tailnet state; never prebuild this view.
 export const dynamic = "force-dynamic";
@@ -33,14 +38,18 @@ export default async function MachinesPage() {
   );
 
   let views: NodeView[] | null = null;
+  let userOptions: UserOption[] = [];
   let error: unknown = null;
 
   try {
     // Agent enrichment is best-effort and fails quiet, so fetch it alongside the
-    // node list; an absent sidecar just yields an empty index.
-    const [rawList, agents] = await Promise.all([
+    // node list; an absent sidecar just yields an empty index. The user list
+    // rides along too — it's the same connection, and it's what the Add device
+    // dialog needs to offer an owner.
+    const [rawList, agents, allUsers] = await Promise.all([
       nodesApi.list(),
       getAgentPeers(),
+      usersApi.list(),
     ]);
     // The agent's own tailnet node is infrastructure, not a device — hide it.
     const list = withoutAgentNodes(rawList);
@@ -53,11 +62,21 @@ export default async function MachinesPage() {
         if (a.online !== b.online) return a.online ? -1 : 1;
         return a.name.localeCompare(b.name);
       });
+    userOptions = allUsers.map((user) => ({
+      id: user.id,
+      label: user.displayName?.trim() || user.name,
+      handle: user.name,
+    }));
   } catch (err) {
     error = err;
   }
 
   const hasMachines = views != null && views.length > 0;
+  // Minting a pre-auth key for the Add device flow is the same capability as
+  // Settings > Pre-auth keys.
+  const canAddDevice = !error && (await sessionCan("keys.write"));
+  // Row/card action menus (rename, tags, expire, delete) need machines.write.
+  const canManage = !error && (await sessionCan("machines.write"));
 
   return (
     <div className="flex flex-col gap-6">
@@ -67,21 +86,25 @@ export default async function MachinesPage() {
         description="Every device enrolled in the control plane and its live signal."
       >
         {hasMachines && <MachinesViewToggle view={view} />}
+        {canAddDevice && <AddDeviceDialog users={userOptions} />}
       </SectionHeading>
 
       {error ? (
         <ConnectionError error={error} />
       ) : views && views.length > 0 ? (
         view === "cards" ? (
-          <MachinesCards nodes={views} nowMs={now} />
+          <MachinesCards nodes={views} nowMs={now} canManage={canManage} />
         ) : (
-          <MachinesTable nodes={views} />
+          <MachinesTable nodes={views} canManage={canManage} />
         )
       ) : (
         <EmptyState
           icon={Server}
           title="No machines enrolled"
           description="Once a device registers with this control plane it appears here. Enrol one with a pre-auth key or the Headscale CLI."
+          action={
+            canAddDevice ? <AddDeviceDialog users={userOptions} /> : undefined
+          }
         />
       )}
     </div>
