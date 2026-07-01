@@ -22,48 +22,69 @@ interface SettingsNavItem {
   description: string;
 }
 
-const ITEMS: SettingsNavItem[] = [
+interface SettingsNavGroup {
+  label: string;
+  items: SettingsNavItem[];
+}
+
+/** Grouped into labeled categories - Termix's accordion feel, kept as real routes. */
+const GROUPS: SettingsNavGroup[] = [
   {
-    label: "Connection",
-    href: "/settings/connection",
-    icon: PlugZap,
-    description: "Headscale URL + key",
+    label: "Identity",
+    items: [
+      {
+        label: "Connection",
+        href: "/settings/connection",
+        icon: PlugZap,
+        description: "Headscale URL + key",
+      },
+      {
+        label: "Authentication",
+        href: "/settings/authentication",
+        icon: ShieldCheck,
+        description: "Sign-in + OIDC",
+      },
+      {
+        label: "Identity providers",
+        href: "/settings/identity-providers",
+        icon: Users,
+        description: "Additional sign-in options",
+      },
+    ],
   },
   {
-    label: "Authentication",
-    href: "/settings/authentication",
-    icon: ShieldCheck,
-    description: "Sign-in + OIDC",
+    label: "Access",
+    items: [
+      {
+        label: "Pre-auth keys",
+        href: "/settings/pre-auth-keys",
+        icon: KeyRound,
+        description: "Enrolment tokens",
+      },
+      {
+        label: "API keys",
+        href: "/settings/api-keys",
+        icon: KeySquare,
+        description: "Admin access",
+      },
+    ],
   },
   {
-    label: "Identity providers",
-    href: "/settings/identity-providers",
-    icon: Users,
-    description: "Additional sign-in options",
-  },
-  {
-    label: "Pre-auth keys",
-    href: "/settings/pre-auth-keys",
-    icon: KeyRound,
-    description: "Enrolment tokens",
-  },
-  {
-    label: "API keys",
-    href: "/settings/api-keys",
-    icon: KeySquare,
-    description: "Admin access",
-  },
-  {
-    label: "Diagnostics",
-    href: "/settings/diagnostics",
-    icon: Activity,
-    description: "Connection self-check",
-  },
-  {
-    label: "Agent",
-    href: "/settings/agent",
-    icon: Cpu,
-    description: "Sidecar + browser SSH",
+    label: "System",
+    items: [
+      {
+        label: "Diagnostics",
+        href: "/settings/diagnostics",
+        icon: Activity,
+        description: "Connection self-check",
+      },
+      {
+        label: "Agent",
+        href: "/settings/agent",
+        icon: Cpu,
+        description: "Sidecar + browser SSH",
+      },
+    ],
   },
 ];
 
@@ -72,9 +93,12 @@ function isActive(pathname: string, href: string): boolean {
 }
 
 /**
- * Schematic settings sidebar: a hairline rail of segments. The active segment
+ * Schematic settings sidebar: a hairline rail of segments, grouped under
+ * category labels (Identity / Access / System) so a growing settings surface
+ * still reads as organized rather than one long flat list. The active segment
  * carries the single beacon marker (a left tick), everything else stays quiet.
- * Collapses to a horizontal scroller on narrow viewports.
+ * Collapses to a horizontal scroller on narrow viewports (group labels hide
+ * there - the scroller is already a compact, linear read).
  */
 export function SettingsNav() {
   const pathname = usePathname() ?? "";
@@ -82,45 +106,52 @@ export function SettingsNav() {
   return (
     <nav
       aria-label="Settings sections"
-      className="flex shrink-0 gap-1 overflow-x-auto lg:w-56 lg:flex-col lg:overflow-visible"
+      className="flex shrink-0 gap-1 overflow-x-auto lg:w-56 lg:flex-col lg:gap-4 lg:overflow-visible"
     >
-      {ITEMS.map((item) => {
-        const active = isActive(pathname, item.href);
-        const Icon = item.icon;
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            aria-current={active ? "page" : undefined}
-            className={cn(
-              "group relative flex items-center gap-2.5 rounded-control border px-3 py-2 text-sm transition-colors",
-              active
-                ? "border-line-strong bg-surface text-ink"
-                : "border-transparent text-ink-muted hover:bg-surface-2 hover:text-ink",
-            )}
-          >
-            {active && (
-              <span
-                className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-beacon-500"
-                aria-hidden
-              />
-            )}
-            <Icon
-              className={cn(
-                "h-4 w-4 shrink-0",
-                active ? "text-beacon-500" : "text-ink-faint",
-              )}
-              aria-hidden
-            />
-            <span className="flex min-w-0 flex-col leading-tight">
-              <span className="truncate font-medium">{item.label}</span>
-              <span className="hidden truncate text-xs text-ink-faint lg:block">
-                {item.description}
-              </span>
-            </span>
-          </Link>
-        );
-      })}
+      {GROUPS.map((group) => (
+        <div key={group.label} className="flex shrink-0 gap-1 lg:flex-col lg:gap-1">
+          <span className="hidden px-3 pb-1 text-[10px] font-medium uppercase tracking-[0.14em] text-ink-faint lg:block">
+            {group.label}
+          </span>
+          {group.items.map((item) => {
+            const active = isActive(pathname, item.href);
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "group relative flex items-center gap-2.5 rounded-control border px-3 py-2 text-sm transition-colors",
+                  active
+                    ? "border-line-strong bg-surface text-ink"
+                    : "border-transparent text-ink-muted hover:bg-surface-2 hover:text-ink",
+                )}
+              >
+                {active && (
+                  <span
+                    className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-beacon-500"
+                    aria-hidden
+                  />
+                )}
+                <Icon
+                  className={cn(
+                    "h-4 w-4 shrink-0",
+                    active ? "text-beacon-500" : "text-ink-faint",
+                  )}
+                  aria-hidden
+                />
+                <span className="flex min-w-0 flex-col leading-tight">
+                  <span className="truncate font-medium">{item.label}</span>
+                  <span className="hidden truncate text-xs text-ink-faint lg:block">
+                    {item.description}
+                  </span>
+                </span>
+              </Link>
+            );
+          })}
+        </div>
+      ))}
     </nav>
   );
 }
