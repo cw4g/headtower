@@ -43,6 +43,15 @@ function secureCookies(): boolean {
  */
 export async function upsertOidcUser(identity: OidcIdentity): Promise<AppUser> {
   const now = new Date();
+  // Bootstrap: the first account on a fresh deployment becomes the owner, so
+  // there is always someone who can manage settings + roles. Once an owner
+  // exists, new accounts get the default role and returning ones keep theirs.
+  const ownerExists = !!(await db
+    .select({ id: appUser.id })
+    .from(appUser)
+    .where(eq(appUser.role, "owner"))
+    .get());
+
   const existing = await db
     .select()
     .from(appUser)
@@ -50,6 +59,7 @@ export async function upsertOidcUser(identity: OidcIdentity): Promise<AppUser> {
     .get();
 
   if (existing) {
+    const promote = !ownerExists && existing.role !== "owner";
     const [updated] = await db
       .update(appUser)
       .set({
@@ -57,6 +67,7 @@ export async function upsertOidcUser(identity: OidcIdentity): Promise<AppUser> {
         email: identity.email,
         picture: identity.picture,
         lastLoginAt: now,
+        ...(promote ? { role: "owner" } : {}),
       })
       .where(eq(appUser.id, existing.id))
       .returning();
@@ -70,7 +81,7 @@ export async function upsertOidcUser(identity: OidcIdentity): Promise<AppUser> {
       name: identity.name,
       email: identity.email,
       picture: identity.picture,
-      role: DEFAULT_ROLE,
+      role: ownerExists ? DEFAULT_ROLE : "owner",
       lastLoginAt: now,
     })
     .returning();
