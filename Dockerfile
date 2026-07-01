@@ -5,10 +5,11 @@
 FROM node:24-slim AS deps
 WORKDIR /app
 RUN corepack enable
-# pnpm-workspace.yaml carries ignoredBuiltDependencies (sharp, unrs-resolver);
-# without it pnpm hard-errors on their unrun build scripts.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-RUN pnpm install --frozen-lockfile
+# --ignore-scripts: pnpm 10 hard-errors on unapproved build scripts (sharp,
+# unrs-resolver) in a fresh frozen install. Those packages ship prebuilt native
+# binaries via optional deps, so skipping lifecycle scripts is safe.
+RUN pnpm install --frozen-lockfile --ignore-scripts
 
 FROM node:24-slim AS build
 WORKDIR /app
