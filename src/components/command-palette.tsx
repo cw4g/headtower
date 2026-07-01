@@ -10,8 +10,10 @@ import {
   KeyRound,
   KeySquare,
   LayoutDashboard,
+  Plus,
   PlugZap,
   Route,
+  ScrollText,
   Server,
   Shield,
   ShieldCheck,
@@ -21,11 +23,26 @@ import {
 import { COMMAND_EVENT } from "@/components/console-sidebar";
 import { Kbd } from "@/components/ui/kbd";
 import { cn } from "@/lib/cn";
+import {
+  listPaletteActivity,
+  listPaletteDevices,
+  type PaletteActivityEntry,
+  type PaletteDevice,
+} from "@/lib/command-palette-data";
+import type { DotStatus } from "@/lib/machines";
 // Type-only: erased at build, so the rbac server-only guard never runs here.
 import type { Capability } from "@/lib/rbac";
 
 /** Plain capability booleans passed from the server; absent means "no". */
 export type CapabilityMap = Partial<Record<Capability, boolean>>;
+
+/** Status-dot color per state, for the small corner dot on a Devices row's icon. */
+const DOT_CLASS: Record<DotStatus, string> = {
+  online: "bg-online-500",
+  warn: "bg-warn-500",
+  critical: "bg-critical-500",
+  idle: "bg-ink-faint",
+};
 
 interface CommandItem {
   id: string;
@@ -37,7 +54,38 @@ interface CommandItem {
   keywords?: string[];
   /** Capability required to surface this target; omitted means always shown. */
   capability?: Capability;
+  /** A small colored dot on the icon (Devices rows only). */
+  dotStatus?: DotStatus;
+  /** Shown in place of the href on the right side, e.g. a device's address. */
+  hint?: string;
 }
+
+/**
+ * Static quick actions, always at the top of the results. Each jumps to where
+ * the action actually lives (Headtower has no globally-mounted dialogs), so
+ * "doing" it is one more click after landing - still faster than hunting
+ * through nav for it.
+ */
+const QUICK_ACTIONS: CommandItem[] = [
+  {
+    id: "quick-add-device",
+    label: "Add device",
+    href: "/machines",
+    icon: Plus,
+    section: "Quick actions",
+    keywords: ["enrol", "enroll", "register", "new device", "authkey"],
+    capability: "keys.write",
+  },
+  {
+    id: "quick-create-key",
+    label: "Create pre-auth key",
+    href: "/settings/pre-auth-keys",
+    icon: KeyRound,
+    section: "Quick actions",
+    keywords: ["preauth", "token", "mint"],
+    capability: "keys.write",
+  },
+];
 
 /**
  * The console's jump targets. Ordered by section so the grouped render stays
@@ -169,14 +217,16 @@ export function CommandPalette({
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const [active, setActive] = React.useState(0);
+  const [devices, setDevices] = React.useState<PaletteDevice[]>([]);
+  const [activity, setActivity] = React.useState<PaletteActivityEntry[]>([]);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const listRef = React.useRef<HTMLDivElement>(null);
 
   // Drop targets the role can't read. With no map (e.g. unauthenticated render)
   // every command is kept, matching the prior always-visible behaviour.
-  const available = React.useMemo(
+  const staticCommands = React.useMemo(
     () =>
-      COMMANDS.filter(
+      [...QUICK_ACTIONS, ...COMMANDS].filter(
         (command) =>
           !command.capability ||
           !capabilities ||
@@ -185,10 +235,47 @@ export function CommandPalette({
     [capabilities],
   );
 
+  // Devices + Recent activity are live state, so they're fetched once per open
+  // rather than baked into the static list above. A failed fetch (or a role
+  // that can't read either) just resolves to an empty group - the static
+  // sections must never be held up by it.
+  const available = React.useMemo(() => {
+    const deviceCommands: CommandItem[] = devices.map((device) => ({
+      id: `device-${device.id}`,
+      label: device.name,
+      href: `/machines/${device.id}`,
+      icon: Server,
+      section: "Devices",
+      keywords: [device.hostname, device.ipv4 ?? "", ...device.tags],
+      dotStatus: device.status,
+      hint: device.ipv4 ?? device.hostname,
+    }));
+    const activityCommands: CommandItem[] = activity.map((entry) => ({
+      id: `activity-${entry.id}`,
+      label: entry.targetLabel
+        ? `${entry.actionLabel} ${entry.targetLabel}`
+        : entry.actionLabel,
+      href: "/audit",
+      icon: ScrollText,
+      section: "Recent activity",
+      keywords: [entry.actor],
+      hint: entry.relativeTime,
+    }));
+    return [...staticCommands, ...deviceCommands, ...activityCommands];
+  }, [staticCommands, devices, activity]);
+
   const openPalette = React.useCallback(() => {
     setQuery("");
     setActive(0);
     setOpen(true);
+    // Fresh each open - a glance at current state, not a stale cache. Fails
+    // quiet: both actions already resolve to [] on any error or denied read.
+    listPaletteDevices()
+      .then(setDevices)
+      .catch(() => setDevices([]));
+    listPaletteActivity()
+      .then(setActivity)
+      .catch(() => setActivity([]));
   }, []);
 
   // Open on the top bar's custom event and on Cmd/Ctrl-K. Both paths just open
@@ -378,17 +465,26 @@ export function CommandPalette({
                       )}
                       <span
                         className={cn(
-                          "flex h-7 w-7 shrink-0 items-center justify-center rounded-control border transition-colors",
+                          "relative flex h-7 w-7 shrink-0 items-center justify-center rounded-control border transition-colors",
                           isActive
                             ? "border-line-strong bg-surface text-beacon-500"
                             : "border-line bg-surface-2 text-ink-faint",
                         )}
                       >
                         <Icon className="h-3.5 w-3.5" aria-hidden />
+                        {command.dotStatus && (
+                          <span
+                            className={cn(
+                              "absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-surface",
+                              DOT_CLASS[command.dotStatus],
+                            )}
+                            aria-hidden
+                          />
+                        )}
                       </span>
                       <span className="flex-1 truncate">{command.label}</span>
                       <span className="data hidden truncate text-xs text-ink-faint sm:inline">
-                        {command.href}
+                        {command.hint ?? command.href}
                       </span>
                       {isActive && (
                         <CornerDownLeft

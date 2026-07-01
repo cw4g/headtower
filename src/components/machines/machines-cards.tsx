@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Antenna, Network, Search, SignalHigh, X } from "lucide-react";
+import { Antenna, ChevronRight, Network, Search, SignalHigh, X } from "lucide-react";
 import { StatusDot } from "@/components/ui/status-dot";
 import { Chip, Tag } from "@/components/ui/chip";
 import { Input } from "@/components/ui/field";
@@ -17,9 +17,32 @@ import {
   matchesStatus,
   reachabilitySeries,
   MACHINE_STATUS_FILTERS,
+  type DotStatus,
   type StatusFilter,
   type NodeView,
 } from "@/lib/machines";
+
+/**
+ * Left-edge stripe color per status - a layer on top of `nodeDot()`'s plain
+ * online/offline split with the expiry warning folded in, since the card
+ * already surfaces "expiring soon" as its own chip alongside the dot. Idle
+ * (offline, nothing wrong) stays a structural line color rather than a status
+ * hue - a quiet card shouldn't read as an alarm.
+ */
+const EDGE_STRIPE_CLASS: Record<DotStatus, string> = {
+  online: "bg-online-500",
+  warn: "bg-warn-500",
+  critical: "bg-critical-500",
+  idle: "bg-line-strong",
+};
+
+function edgeStatus(
+  node: Pick<NodeView, "online" | "expired" | "expiresSoon">,
+): DotStatus {
+  if (node.expired) return "critical";
+  if (node.expiresSoon) return "warn";
+  return node.online ? "online" : "idle";
+}
 
 /**
  * The card-grid presentation of the machines list: a denser, host-oriented read
@@ -218,6 +241,7 @@ function HostCard({
   canManage: boolean;
 }) {
   const dot = nodeDot(node);
+  const edge = edgeStatus(node);
   const series = React.useMemo(
     () => reachabilitySeries(node, nowMs),
     [node, nowMs],
@@ -250,14 +274,27 @@ function HostCard({
     // Relative wrapper so the actions kebab can float in the corner as a
     // sibling of the card's Link - nesting an interactive trigger inside the
     // anchor would double up on clicks (both "open the menu" and "navigate").
-    <div className="relative h-full">
+    // `group` lives here (not on the Link) so both the Link's own descendants
+    // and the sibling kebab can react to one hover/focus-within state.
+    <div className="group relative h-full">
       <Link
         href={`/machines/${node.id}`}
         className={cn(
-          "group flex h-full flex-col gap-3 rounded-card border border-line bg-surface p-3.5 transition-colors hover:border-line-strong hover:bg-surface-2/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beacon-500/40",
+          "relative flex h-full flex-col gap-3 overflow-hidden rounded-card border border-line bg-surface p-3.5 transition-colors hover:border-line-strong hover:bg-surface-2/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-beacon-500/40",
           canManage && "pr-9",
         )}
       >
+        {/* Status-edge stripe: a flush color rail reading the node's state at
+            a glance, before any label is read. `overflow-hidden` above clips
+            it to the card's rounded corners. */}
+        <div
+          aria-hidden
+          className={cn(
+            "pointer-events-none absolute inset-y-0 left-0 w-[3px]",
+            EDGE_STRIPE_CLASS[edge],
+          )}
+        />
+
         {/* Identity: status dot + name, with agent OS / version to the right. */}
         <div className="flex items-start justify-between gap-2">
           <div className="flex min-w-0 items-start gap-2">
@@ -373,7 +410,9 @@ function HostCard({
           </div>
         )}
 
-        {/* Footer: last-seen on the left, reachability hint on the right. */}
+        {/* Footer: last-seen on the left, reachability hint + open hint on
+            the right. The chevron is a resting-state-calm affordance, not a
+            control - it fades in with the rest of the card's hover state. */}
         <div className="mt-auto flex items-center justify-between gap-3 border-t border-line pt-2.5">
           {node.online ? (
             <span className="inline-flex items-center gap-1 text-xs text-online-600">
@@ -389,18 +428,24 @@ function HostCard({
             </span>
           )}
 
-          {series.length > 0 && (
-            <Sparkline
-              data={series}
-              tone={reachTone}
-              min={0}
-              max={1}
-              area
-              className="h-6 w-24"
-              aria-label={`Recent reachability for ${node.name}`}
-              title={`Recent reachability - ${node.online ? "online" : node.lastSeenLabel}`}
+          <div className="flex items-center gap-2">
+            {series.length > 0 && (
+              <Sparkline
+                data={series}
+                tone={reachTone}
+                min={0}
+                max={1}
+                area
+                className="h-6 w-24"
+                aria-label={`Recent reachability for ${node.name}`}
+                title={`Recent reachability - ${node.online ? "online" : node.lastSeenLabel}`}
+              />
+            )}
+            <ChevronRight
+              aria-hidden
+              className="h-3.5 w-3.5 shrink-0 text-ink-faint opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
             />
-          )}
+          </div>
         </div>
       </Link>
 
@@ -409,7 +454,7 @@ function HostCard({
           nodeId={node.id}
           name={node.name}
           tags={node.tags}
-          className="absolute right-2.5 top-2.5 bg-surface/80 backdrop-blur-sm hover:bg-surface-2"
+          className="absolute right-2.5 top-2.5 bg-surface/80 opacity-0 backdrop-blur-sm transition-opacity duration-150 hover:bg-surface-2 group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100"
         />
       )}
     </div>

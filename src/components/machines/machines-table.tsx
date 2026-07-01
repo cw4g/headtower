@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Antenna, Network, Search, SignalHigh, X } from "lucide-react";
+import { Antenna, ChevronRight, Network, Search, SignalHigh, X } from "lucide-react";
 import {
   Table,
   TableHead,
@@ -25,9 +25,32 @@ import {
   matchesQuery,
   matchesStatus,
   MACHINE_STATUS_FILTERS,
+  type DotStatus,
   type StatusFilter,
   type NodeView,
 } from "@/lib/machines";
+
+/**
+ * Status-edge border color per row - the same status read as the card grid's
+ * edge stripe (see machines-cards.tsx), just a 2px rail instead of a 3px one:
+ * the table is denser, so a lighter touch on the leading cell reads as an
+ * indicator rather than a stripe. Idle (offline, nothing wrong) stays a
+ * structural line color rather than a status hue.
+ */
+const EDGE_BORDER_CLASS: Record<DotStatus, string> = {
+  online: "border-l-online-500",
+  warn: "border-l-warn-500",
+  critical: "border-l-critical-500",
+  idle: "border-l-line-strong",
+};
+
+function edgeStatus(
+  node: Pick<NodeView, "online" | "expired" | "expiresSoon">,
+): DotStatus {
+  if (node.expired) return "critical";
+  if (node.expiresSoon) return "warn";
+  return node.online ? "online" : "idle";
+}
 
 export function MachinesTable({
   nodes,
@@ -241,16 +264,19 @@ function MachineRow({
   onOpen: () => void;
 }) {
   const dot = nodeDot(node);
+  const edge = edgeStatus(node);
   const visibleTags = node.tags.slice(0, 2);
   const extraTags = node.tags.length - visibleTags.length;
 
   return (
     <Tr
       onClick={onOpen}
-      className="cursor-pointer"
+      // `group` so the row-hover-revealed open hint and actions kebab below
+      // can key off one hover/focus-within state, same as the card grid.
+      className="group cursor-pointer"
     >
-      {/* Status */}
-      <Td className="pl-4">
+      {/* Status - the leading cell also carries the row's status-edge rail. */}
+      <Td className={cn("border-l-2 pl-4", EDGE_BORDER_CLASS[edge])}>
         <div className="flex items-center gap-2">
           <StatusDot status={dot.status} pulse={node.online} />
           <span className="text-xs text-ink-muted">{dot.label}</span>
@@ -370,28 +396,37 @@ function MachineRow({
         </div>
       </Td>
 
-      {/* Last seen */}
+      {/* Last seen - trailed by a row-hover-revealed open hint, same calm
+          resting state as the card grid's chevron. */}
       <Td className={canManage ? undefined : "pr-4"} align="right">
-        {node.online ? (
-          <span className="inline-flex items-center gap-1 text-xs text-online-600">
-            <SignalHigh className="h-3.5 w-3.5" aria-hidden />
-            connected
-          </span>
-        ) : (
-          <span className="data text-xs text-ink-muted" title={node.lastSeen ?? "never"}>
-            {node.lastSeenLabel}
-          </span>
-        )}
+        <span className="inline-flex items-center justify-end gap-2">
+          {node.online ? (
+            <span className="inline-flex items-center gap-1 text-xs text-online-600">
+              <SignalHigh className="h-3.5 w-3.5" aria-hidden />
+              connected
+            </span>
+          ) : (
+            <span className="data text-xs text-ink-muted" title={node.lastSeen ?? "never"}>
+              {node.lastSeenLabel}
+            </span>
+          )}
+          <ChevronRight
+            aria-hidden
+            className="h-3.5 w-3.5 shrink-0 text-ink-faint opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+          />
+        </span>
       </Td>
 
-      {/* Actions - own click handler so it doesn't also trigger the row's onOpen. */}
+      {/* Actions - own click handler so it doesn't also trigger the row's
+          onOpen. Hover/focus-revealed to keep the resting row calm; stays
+          visible while the menu itself is open via Radix's data-state. */}
       {canManage && (
         <Td className="pr-4" align="right" onClick={(e) => e.stopPropagation()}>
           <NodeActionsMenu
             nodeId={node.id}
             name={node.name}
             tags={node.tags}
-            className="ml-auto"
+            className="ml-auto opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100"
           />
         </Td>
       )}
