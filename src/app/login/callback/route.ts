@@ -28,14 +28,21 @@ import {
   upsertOidcUser,
 } from "@/lib/auth/session";
 import { SESSION_COOKIE } from "@/lib/auth/session-token";
+import { originFromHeaders } from "@/lib/auth/request";
 import { recordAudit } from "@/lib/audit";
 
 // Always run against live state; never cache or prerender a callback.
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest): Promise<Response> {
+  // The public origin (scheme://host) from the proxy's forwarding headers - NOT
+  // request.nextUrl, which behind the reverse proxy is the internal bind address
+  // (0.0.0.0:3000). Every redirect below builds on this so it stays on the
+  // public host + base path.
+  const origin = originFromHeaders(request.headers);
+
   if (!isOidcEnabled()) {
-    return back(request, "disabled");
+    return back(origin, "disabled");
   }
 
   const currentUrl = new URL(request.url);
@@ -43,19 +50,19 @@ export async function GET(request: NextRequest): Promise<Response> {
   // The provider may report an error instead of returning a code.
   const providerError = currentUrl.searchParams.get("error");
   if (providerError) {
-    return back(request, providerError);
+    return back(origin, providerError);
   }
 
   const transaction = await readLoginTransaction();
   if (!transaction) {
-    return back(request, "expired");
+    return back(origin, "expired");
   }
 
   let identity;
   try {
     identity = await completeLogin(currentUrl, transaction);
   } catch {
-    return back(request, "exchange_failed");
+    return back(origin, "exchange_failed");
   }
 
   const user = await upsertOidcUser(identity);
@@ -70,17 +77,29 @@ export async function GET(request: NextRequest): Promise<Response> {
     ip: clientIp(request),
   });
 
-  const destination = safeReturn(transaction.returnTo);
-  const response = NextResponse.redirect(new URL(destination, request.nextUrl));
+  const response = NextResponse.redirect(appUrl(origin, safeReturn(transaction.returnTo)));
   response.cookies.set(SESSION_COOKIE, token, sessionCookieOptions(expiresAt));
   return clearTransaction(response);
 }
 
 /** Redirect back to /login carrying an error code, clearing any transaction. */
-function back(request: NextRequest, error: string): NextResponse {
-  const url = new URL("/login", request.nextUrl);
+function back(origin: string, error: string): NextResponse {
+  const url = appUrl(origin, "/login");
   url.searchParams.set("error", error);
   return clearTransaction(NextResponse.redirect(url));
+}
+
+/**
+ * Build a public URL for an in-app path against `origin`, prefixing the base
+ * path (e.g. "/admin") when the path doesn't already carry it.
+ */
+function appUrl(origin: string, path: string): URL {
+  const basePath = process.env.HEADTOWER_BASE_PATH?.trim() || "";
+  let p = path.startsWith("/") ? path : `/${path}`;
+  if (basePath && p !== basePath && !p.startsWith(`${basePath}/`)) {
+    p = p === "/" ? `${basePath}/` : `${basePath}${p}`;
+  }
+  return new URL(p, origin);
 }
 
 /** Expire the login-transaction cookies on the outgoing response. */
