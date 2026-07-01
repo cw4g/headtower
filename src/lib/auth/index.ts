@@ -4,12 +4,14 @@
  * Two modes, one API. {@link getSession}/{@link requireSession} keep the same
  * shape and call sites regardless of how the operator authenticated:
  *
- *   OPERATOR mode - OIDC is not configured. A configured HEADSCALE_API_KEY (a
- *     successful {@link getConfig}) implies the single operator session, with
- *     the default RBAC role. No cookies, no accounts - the today behaviour.
+ *   OPERATOR mode - no identity provider is enabled ({@link isOidcEnabled}
+ *     is false: neither the legacy single-provider slot nor any
+ *     `oidc_provider` row). A configured HEADSCALE_API_KEY (a successful
+ *     {@link getConfig}) implies the single operator session, with the
+ *     default RBAC role. No cookies, no accounts - the today behaviour.
  *
- *   OIDC mode - `config.oidc` is set. The session comes from the signed
- *     `ht_session` cookie and its backing `session` row, resolved by
+ *   OIDC mode - {@link isOidcEnabled} is true. The session comes from the
+ *     signed `ht_session` cookie and its backing `session` row, resolved by
  *     {@link loadSession} to a real `app_user` (id, name, email, picture, role).
  *
  * Either way the result is a {@link Session}: a single principal carrying a
@@ -23,6 +25,7 @@
 
 import { ConfigError, getConfig } from "@/lib/config";
 import { type Role } from "@/lib/rbac";
+import { isOidcEnabled } from "./oidc";
 import { loadSession } from "./session";
 
 /** How a session was established. */
@@ -71,15 +74,14 @@ const OPERATOR: SessionUser = {
  * (e.g. a server-only violation) still throw.
  */
 export async function getSession(): Promise<Session | null> {
-  let config;
   try {
-    config = getConfig();
+    getConfig();
   } catch (error) {
     if (error instanceof ConfigError) return null;
     throw error;
   }
 
-  if (config.oidc) {
+  if (isOidcEnabled()) {
     const loaded = await loadSession();
     if (!loaded) return null;
     return {
