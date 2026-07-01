@@ -40,6 +40,9 @@ export function AvatarImage({ src, fallback }: AvatarImageProps) {
       width={28}
       height={28}
       loading="lazy"
+      // Many OIDC providers (Google, and Pocket ID) 403 avatar requests that
+      // carry a Referer. The sidebar avatar sends none for the same reason.
+      referrerPolicy="no-referrer"
       className="h-7 w-7 shrink-0 rounded-md border border-line object-cover"
       onError={() => setBroken(true)}
     />
