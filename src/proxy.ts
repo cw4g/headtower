@@ -2,25 +2,39 @@
  * Route gate (Next.js 16 Proxy - formerly Middleware).
  *
  * In Next.js 16 the `middleware` convention was renamed to `proxy`; this file is
- * the request boundary that runs before the app. It performs an OPTIMISTIC auth
- * check only: when OIDC mode is on and a request for an app route arrives without
- * a validly-signed `ht_session` cookie, it redirects to `/login`. It never
- * touches the database - the secure check (session row + account) is done by
- * `getSession()` inside Server Components and Server Actions.
+ * the request boundary that runs before the app. This is the AUTHORITATIVE
+ * gate: when single sign-on is on (any identity provider enabled - the legacy
+ * single-provider slot or any `oidc_provider` row, see
+ * `@/lib/auth/oidc`'s {@link isOidcEnabled}) and a request for an app route
+ * arrives without a validly-signed `ht_session` cookie, it redirects to
+ * `/login` BEFORE any Server Component starts rendering.
  *
- * It deliberately imports only the jose-light token helpers (no db, no Next
- * request APIs beyond `next/server`), keeping the boundary lean as the proxy
- * docs advise. In operator mode (OIDC unset) it is a pass-through, so the app
- * keeps working with just HEADSCALE_API_KEY.
+ * That "before rendering starts" property is load-bearing, not a style choice:
+ * a redirect() call inside a layout Server Component (e.g. the app shell) does
+ * NOT stop sibling/child route segments from having already run their own data
+ * fetches - Next.js resolves a route's `children` tree concurrently with its
+ * layouts, so an unauthenticated request could still receive a page's fetched
+ * data serialized into the redirect response's RSC payload even though the
+ * browser itself only ever follows the Location header and never renders it.
+ * Gating here, before the route tree is built at all, closes that hole; relying
+ * on a Server Component redirect alone does not.
+ *
+ * Proxy defaults to the Node.js runtime in Next.js 16 (not Edge), so it can
+ * read the same synchronous, `node:sqlite`-backed config/provider store every
+ * other server module uses - no separate env-only approximation needed here.
+ *
+ * `getSession()` (used inside Server Components and Server Actions) remains
+ * the second, secure check: it additionally validates the session row still
+ * exists (e.g. wasn't revoked from Settings > Members or the account page).
  *
  * The NEEDS-SETUP gate (redirect to /setup when no Headscale connection is
- * configured) is not decided here: whether a connection exists can live in the
- * DB, which the proxy intentionally never reads. That authoritative check runs in
- * the app-shell (a Server Component). The proxy's only job for setup is to keep
- * /setup reachable - always public - so the wizard loads even before sign-in.
+ * configured) stays in the app-shell, not here - /setup must stay reachable
+ * even before sign-in, and this file's job for it is only to keep that path
+ * public.
  */
 
 import { NextResponse, type NextRequest } from "next/server";
+import { isOidcEnabled } from "@/lib/auth/oidc";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth/session-token";
 
 /**
@@ -29,22 +43,9 @@ import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth/session-token";
  */
 const PUBLIC_PREFIXES = ["/login", "/setup"];
 
-/**
- * OIDC mode is active only when all three provider vars are present, mirroring
- * the all-or-nothing rule in `@/lib/config`. Read here directly to keep the
- * proxy free of heavier imports.
- */
-function oidcModeEnabled(): boolean {
-  return Boolean(
-    process.env.HEADTOWER_OIDC_ISSUER &&
-      process.env.HEADTOWER_OIDC_CLIENT_ID &&
-      process.env.HEADTOWER_OIDC_CLIENT_SECRET,
-  );
-}
-
 export async function proxy(request: NextRequest): Promise<NextResponse> {
   // Operator mode: no sessions, nothing to gate.
-  if (!oidcModeEnabled()) return NextResponse.next();
+  if (!isOidcEnabled()) return NextResponse.next();
 
   const { pathname } = request.nextUrl;
   if (PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
