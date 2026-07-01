@@ -96,16 +96,36 @@ export function AccountMenu({
           {account.roleLabel}
         </div>
         <DropdownMenuSeparator />
-        <form action={logout}>
-          <DropdownMenuItem destructive asChild>
-            <button type="submit" className="w-full">
-              <LogOut className="h-4 w-4" aria-hidden />
-              Sign out
-            </button>
-          </DropdownMenuItem>
-        </form>
+        <SignOutItem />
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/**
+ * Sign out. The action runs from the menu item's onSelect inside a transition.
+ * A nested <form> submit button does not work here: Radix closes the menu on
+ * select and unmounts the button before the browser fires the form submit, so
+ * the request never leaves. Calling the server action directly avoids the race;
+ * it clears the session + cookie and redirects to /login.
+ */
+function SignOutItem() {
+  const [pending, startTransition] = React.useTransition();
+  return (
+    <DropdownMenuItem
+      destructive
+      disabled={pending}
+      onSelect={(event) => {
+        // Keep the menu mounted through the submit; the action redirects anyway.
+        event.preventDefault();
+        startTransition(async () => {
+          await logout();
+        });
+      }}
+    >
+      <LogOut className="h-4 w-4" aria-hidden />
+      {pending ? "Signing out" : "Sign out"}
+    </DropdownMenuItem>
   );
 }
 
