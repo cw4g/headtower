@@ -15,15 +15,19 @@ services:
     volumes:
       # Local store: your Headscale connection, OIDC config, sessions, audit log.
       - headtower-data:/app/data
+    extra_hosts:
+      # Lets the container reach a Headscale running on the host (e.g. :8080).
+      - "host.docker.internal:host-gateway"
     environment:
       - NODE_ENV=production
-      # Everything below is OPTIONAL - configure Headscale + OIDC from the
-      # in-app setup wizard instead. Set them here only if you prefer declarative
-      # config or if you enable OIDC (which needs a session secret).
-      # - HEADSCALE_URL=https://hs.example.com
-      # - HEADSCALE_API_KEY=your-headscale-api-key
-      # - HEADTOWER_SESSION_SECRET=change-me-to-32+-random-chars   # required only for OIDC
-      # - HEADTOWER_SECRET=optional-encrypts-the-stored-api-key-at-rest
+      # Core connection - set these in .env and it connects on boot, skipping
+      # the setup wizard. Everything else is configured in the Settings panel.
+      - HEADSCALE_URL=${HEADSCALE_URL:-}
+      - HEADSCALE_API_KEY=${HEADSCALE_API_KEY:-}
+      # OIDC/SSO session signing (optional; configure OIDC itself in Settings).
+      - HEADTOWER_SESSION_SECRET=${HEADTOWER_SESSION_SECRET:-}
+      # Optional: encrypts secrets stored in the DB at rest.
+      - HEADTOWER_SECRET=${HEADTOWER_SECRET:-}
 
 volumes:
   headtower-data:
