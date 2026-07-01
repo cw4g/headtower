@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { LogOut } from "lucide-react";
+import Link from "next/link";
+import { LogOut, UserRound } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -95,6 +96,12 @@ export function AccountMenu({
         <div className="px-2 pb-1.5 text-[11px] uppercase tracking-[0.08em] text-ink-faint">
           {account.roleLabel}
         </div>
+        <DropdownMenuItem asChild>
+          <Link href="/account">
+            <UserRound className="h-4 w-4" aria-hidden />
+            Account
+          </Link>
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <SignOutItem />
       </DropdownMenuContent>
