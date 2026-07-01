@@ -9,6 +9,9 @@ const withNextra = nextra({
 
 export default withNextra({
   reactStrictMode: true,
+  // Static HTML export: GitHub Pages only serves files, no Node server. The
+  // custom domain (headtower.niheshr.com) sits at the root, so no basePath.
+  output: "export",
   // Pin the workspace root to this directory so Next never climbs into the
   // Headtower app one level up (there are lockfiles in both places). Keeps the
   // docs build fully self-contained.
