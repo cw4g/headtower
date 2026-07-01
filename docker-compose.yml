@@ -1,0 +1,22 @@
+services:
+  headtower:
+    build: .
+    container_name: headtower
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      # Local store: your Headscale connection, OIDC config, sessions, audit log.
+      - headtower-data:/app/data
+    environment:
+      - NODE_ENV=production
+      # Everything below is OPTIONAL - configure Headscale + OIDC from the
+      # in-app setup wizard instead. Set them here only if you prefer declarative
+      # config or if you enable OIDC (which needs a session secret).
+      # - HEADSCALE_URL=https://hs.example.com
+      # - HEADSCALE_API_KEY=your-headscale-api-key
+      # - HEADTOWER_SESSION_SECRET=change-me-to-32+-random-chars   # required only for OIDC
+      # - HEADTOWER_SECRET=optional-encrypts-the-stored-api-key-at-rest
+
+volumes:
+  headtower-data:

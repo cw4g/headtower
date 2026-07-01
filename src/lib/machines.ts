@@ -275,6 +275,11 @@ export function normalizeMachineView(
   return value === "cards" ? "cards" : "table";
 }
 
+/** Persist the view preference (client-side, via `document.cookie`). */
+export function persistMachineView(view: MachineViewMode): void {
+  document.cookie = `${MACHINES_VIEW_COOKIE}=${view}; path=/; max-age=${MACHINES_VIEW_MAX_AGE_SECONDS}; samesite=lax`;
+}
+
 /* ------------------------------------------------------------------ *
  * Filtering - shared verbatim by the table and card views so both read
  * the same query grammar and status segments.

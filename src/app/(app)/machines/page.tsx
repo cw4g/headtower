@@ -1,10 +1,19 @@
+import { cookies } from "next/headers";
 import { Server } from "lucide-react";
 import { nodes as nodesApi } from "@/lib/headscale";
 import { getAgentPeers } from "@/lib/agent";
-import { toNodeView, nowMs } from "@/lib/machines";
+import {
+  toNodeView,
+  nowMs,
+  normalizeMachineView,
+  MACHINES_VIEW_COOKIE,
+  type NodeView,
+} from "@/lib/machines";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { EmptyState } from "@/components/ui/empty-state";
 import { MachinesTable } from "@/components/machines/machines-table";
+import { MachinesCards } from "@/components/machines/machines-cards";
+import { MachinesViewToggle } from "@/components/machines/machines-view-toggle";
 import { ConnectionError } from "@/components/machines/connection-error";
 
 // The console reports live tailnet state; never prebuild this view.
@@ -15,11 +24,17 @@ export const metadata = {
 };
 
 export default async function MachinesPage() {
-  let views: ReturnType<typeof toNodeView>[] | null = null;
+  // One request clock, read once, and threaded into the derived views (and the
+  // card reachability hint) so server render and client hydration agree.
+  const now = nowMs();
+  const view = normalizeMachineView(
+    (await cookies()).get(MACHINES_VIEW_COOKIE)?.value,
+  );
+
+  let views: NodeView[] | null = null;
   let error: unknown = null;
 
   try {
-    const now = nowMs();
     // Agent enrichment is best-effort and fails quiet, so fetch it alongside the
     // node list; an absent sidecar just yields an empty index.
     const [list, agents] = await Promise.all([
@@ -39,18 +54,26 @@ export default async function MachinesPage() {
     error = err;
   }
 
+  const hasMachines = views != null && views.length > 0;
+
   return (
     <div className="flex flex-col gap-6">
       <SectionHeading
         eyebrow="Tailnet"
         title="Machines"
         description="Every device enrolled in the control plane and its live signal."
-      />
+      >
+        {hasMachines && <MachinesViewToggle view={view} />}
+      </SectionHeading>
 
       {error ? (
         <ConnectionError error={error} />
       ) : views && views.length > 0 ? (
-        <MachinesTable nodes={views} />
+        view === "cards" ? (
+          <MachinesCards nodes={views} nowMs={now} />
+        ) : (
+          <MachinesTable nodes={views} />
+        )
       ) : (
         <EmptyState
           icon={Server}

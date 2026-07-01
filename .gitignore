@@ -47,3 +47,6 @@ docs/out/
 
 # runtime data (sqlite)
 data/
+
+# internal build notes (not shipped)
+NOTES.md

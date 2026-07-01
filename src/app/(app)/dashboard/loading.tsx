@@ -23,13 +23,45 @@ export default function DashboardLoading() {
       </div>
 
       {/* Readout strip */}
-      <div className="grid grid-cols-4 divide-x divide-line overflow-hidden rounded-card border border-line bg-surface">
+      <div className="grid grid-cols-2 divide-x divide-y divide-line overflow-hidden rounded-card border border-line bg-surface sm:grid-cols-4 sm:divide-y-0">
         {Array.from({ length: 4 }).map((_, i) => (
           <div key={i} className="flex flex-col gap-2.5 px-4 py-4 sm:px-6 sm:py-5">
             <Skeleton className="h-2.5 w-14" />
             <Skeleton className="h-7 w-12" />
           </div>
         ))}
+      </div>
+
+      {/* Widget grid — trend, distributions, routing */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        {[
+          "lg:col-span-2",
+          "",
+          "",
+          "lg:col-span-2",
+        ].map((span, i) => (
+          <div
+            key={i}
+            className={`overflow-hidden rounded-card border border-line bg-surface ${span}`}
+          >
+            <div className="border-b border-line px-4 py-2.5">
+              <Skeleton className="h-2.5 w-28" />
+            </div>
+            <div className="flex h-40 items-center justify-center p-4">
+              <Skeleton className="h-28 w-[80%] rounded-lg" />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Key expiry timeline */}
+      <div className="overflow-hidden rounded-card border border-line bg-surface">
+        <div className="border-b border-line px-4 py-2.5">
+          <Skeleton className="h-2.5 w-20" />
+        </div>
+        <div className="flex h-32 items-center justify-center p-4">
+          <Skeleton className="h-px w-[85%]" />
+        </div>
       </div>
 
       {/* Needs attention */}

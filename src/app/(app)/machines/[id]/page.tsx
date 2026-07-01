@@ -556,9 +556,9 @@ function LifecycleCard({
         </div>
 
         <div className="flex flex-col">
-          <span className="mb-1">
+          <div className="mb-1">
             <FieldLabel icon={Fingerprint}>Key material</FieldLabel>
-          </span>
+          </div>
           <KeyRow label="Machine key" value={node.machineKey} />
           <KeyRow label="Node key" value={node.nodeKey} />
           <KeyRow label="Disco key" value={node.discoKey} />
@@ -673,10 +673,6 @@ function ConnectivityCard({
         <div className="flex items-center justify-between gap-2 border-t border-line pt-3">
           <FieldLabel>Reachability</FieldLabel>
           <Chip variant={reach.variant}>{reach.label}</Chip>
-        </div>
-        <div className="flex items-center justify-between gap-2">
-          <FieldLabel>Registered via</FieldLabel>
-          <span className="text-sm text-ink">{view.registerMethod}</span>
         </div>
       </CardBody>
     </Card>

@@ -2,33 +2,41 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Antenna, Network, Search, SignalHigh, X } from "lucide-react";
-import {
-  Table,
-  TableHead,
-  TableBody,
-  Tr,
-  Th,
-  Td,
-} from "@/components/ui/table";
 import { StatusDot } from "@/components/ui/status-dot";
 import { Chip, Tag } from "@/components/ui/chip";
 import { Input } from "@/components/ui/field";
 import { Kbd } from "@/components/ui/kbd";
+import { Sparkline, type ChartTone } from "@/components/charts";
 import { cn } from "@/lib/cn";
 import {
   nodeDot,
-  ownerLabel,
   matchesQuery,
   matchesStatus,
+  reachabilitySeries,
   MACHINE_STATUS_FILTERS,
   type StatusFilter,
   type NodeView,
 } from "@/lib/machines";
 
-export function MachinesTable({ nodes }: { nodes: NodeView[] }) {
-  const router = useRouter();
+/**
+ * The card-grid presentation of the machines list: a denser, host-oriented read
+ * of the same nodes the table shows. Each card is a self-contained readout -
+ * status, identity, primary address, tags, route/exit markers, last-seen, and a
+ * derived recent-reachability sparkline - and links straight to the detail view.
+ *
+ * It carries its own toolbar (search + status segments) so the two views behave
+ * identically; the shared filter grammar lives in `@/lib/machines`. `nowMs` is
+ * the server request clock, threaded through so the reachability hint renders
+ * the same on the server and after hydration.
+ */
+export function MachinesCards({
+  nodes,
+  nowMs,
+}: {
+  nodes: NodeView[];
+  nowMs: number;
+}) {
   const [query, setQuery] = React.useState("");
   const [status, setStatus] = React.useState<StatusFilter>("all");
   const searchRef = React.useRef<HTMLInputElement>(null);
@@ -161,145 +169,118 @@ export function MachinesTable({ nodes }: { nodes: NodeView[] }) {
         })}
       </div>
 
-      <div className="overflow-hidden rounded-card border border-line bg-surface">
-        <Table>
-          <TableHead>
-            <Tr className="hover:bg-transparent">
-              <Th className="pl-4">Status</Th>
-              <Th>Machine</Th>
-              <Th>Owner</Th>
-              <Th>Addresses</Th>
-              <Th>Tags</Th>
-              <Th>Routes</Th>
-              <Th className="pr-4" align="right">
-                Last seen
-              </Th>
-            </Tr>
-          </TableHead>
-          <TableBody>
-            {filtered.length === 0 ? (
-              <Tr className="hover:bg-transparent">
-                <Td colSpan={7} className="py-10 text-center">
-                  <p className="text-sm text-ink-muted">No machines match.</p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setQuery("");
-                      setStatus("all");
-                    }}
-                    className="mt-1 text-xs text-beacon-500 hover:underline"
-                  >
-                    Reset filters
-                  </button>
-                </Td>
-              </Tr>
-            ) : (
-              filtered.map((node) => (
-                <MachineRow
-                  key={node.id}
-                  node={node}
-                  onOpen={() => router.push(`/machines/${node.id}`)}
-                />
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+      {filtered.length === 0 ? (
+        <div className="rounded-card border border-dashed border-line-strong px-6 py-12 text-center">
+          <p className="text-sm text-ink-muted">No machines match.</p>
+          <button
+            type="button"
+            onClick={() => {
+              setQuery("");
+              setStatus("all");
+            }}
+            className="mt-1 text-xs text-beacon-500 hover:underline"
+          >
+            Reset filters
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {filtered.map((node) => (
+            <HostCard key={node.id} node={node} nowMs={nowMs} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function MachineRow({
-  node,
-  onOpen,
-}: {
-  node: NodeView;
-  onOpen: () => void;
-}) {
+function HostCard({ node, nowMs }: { node: NodeView; nowMs: number }) {
   const dot = nodeDot(node);
-  const visibleTags = node.tags.slice(0, 2);
+  const series = React.useMemo(
+    () => reachabilitySeries(node, nowMs),
+    [node, nowMs],
+  );
+  const reachTone: ChartTone = node.expired
+    ? "critical"
+    : node.online
+      ? "online"
+      : "warn";
+
+  const visibleTags = node.tags.slice(0, 3);
   const extraTags = node.tags.length - visibleTags.length;
 
+  const os = node.agent?.os ?? null;
+  const version = node.agent?.clientVersion ?? null;
+
+  const primaryAddr = node.ipv4 ?? node.ipv6;
+  const secondaryAddr = node.ipv4 && node.ipv6 ? node.ipv6 : null;
+
+  const hasMarkers =
+    node.isExitNode ||
+    node.advertisesExit ||
+    node.subnetRoutes.length > 0 ||
+    node.pendingRoutes.length > 0 ||
+    node.expiresSoon ||
+    node.expired;
+  const hasTags = node.tags.length > 0 || node.invalidTags.length > 0;
+
   return (
-    <Tr
-      onClick={onOpen}
-      className="cursor-pointer"
+    <Link
+      href={`/machines/${node.id}`}
+      className="group flex flex-col gap-3 rounded-card border border-line bg-surface p-3.5 transition-colors hover:border-line-strong hover:bg-surface-2/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beacon-500/40"
     >
-      {/* Status */}
-      <Td className="pl-4">
-        <div className="flex items-center gap-2">
-          <StatusDot status={dot.status} pulse={node.online} />
-          <span className="text-xs text-ink-muted">{dot.label}</span>
-        </div>
-      </Td>
-
-      {/* Machine name + hostname */}
-      <Td>
-        <Link
-          href={`/machines/${node.id}`}
-          onClick={(e) => e.stopPropagation()}
-          className="block font-medium text-ink hover:text-beacon-500"
-        >
-          {node.name}
-        </Link>
-        {node.hostname !== node.name && (
-          <span className="data block text-xs text-ink-faint">
-            {node.hostname}
-          </span>
-        )}
-        {node.agent && (node.agent.os || node.agent.clientVersion) && (
-          <span
-            className="data block text-xs text-ink-faint"
-            title="Reported by agent"
-          >
-            {[node.agent.os, node.agent.clientVersion]
-              .filter(Boolean)
-              .join(" · ")}
-          </span>
-        )}
-      </Td>
-
-      {/* Owner */}
-      <Td>
-        <span className="text-ink-muted">{ownerLabel(node.user)}</span>
-      </Td>
-
-      {/* Addresses */}
-      <Td data>
-        {node.ipv4 && <span className="block text-ink">{node.ipv4}</span>}
-        {node.ipv6 && (
-          <span className="block truncate text-xs text-ink-faint" title={node.ipv6}>
-            {node.ipv6}
-          </span>
-        )}
-        {!node.ipv4 && !node.ipv6 && <span className="text-ink-faint">—</span>}
-      </Td>
-
-      {/* Tags */}
-      <Td>
-        {node.tags.length === 0 && node.invalidTags.length === 0 ? (
-          <span className="text-ink-faint">—</span>
-        ) : (
-          <div className="flex flex-wrap items-center gap-1">
-            {visibleTags.map((tag) => (
-              <Tag key={tag}>{tag.replace(/^tag:/, "")}</Tag>
-            ))}
-            {extraTags > 0 && (
-              <Chip variant="default" mono>
-                +{extraTags}
-              </Chip>
+      {/* Identity: status dot + name, with agent OS / version to the right. */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-w-0 items-start gap-2">
+          <StatusDot
+            status={dot.status}
+            pulse={node.online}
+            className="mt-1"
+          />
+          <div className="min-w-0">
+            <div className="truncate font-medium text-ink group-hover:text-beacon-500">
+              {node.name}
+            </div>
+            {node.hostname !== node.name && (
+              <div className="data truncate text-xs text-ink-faint">
+                {node.hostname}
+              </div>
             )}
-            {node.invalidTags.length > 0 && (
-              <Chip variant="critical" mono title="Tags rejected by policy">
-                {node.invalidTags.length} invalid
-              </Chip>
+          </div>
+        </div>
+        {(os || version) && (
+          <div className="shrink-0 text-right" title="Reported by agent">
+            {os && <div className="text-xs text-ink-muted">{os}</div>}
+            {version && (
+              <div className="data text-[11px] text-ink-faint">{version}</div>
             )}
           </div>
         )}
-      </Td>
+      </div>
 
-      {/* Routes / markers */}
-      <Td>
+      {/* Primary address (mono readout). */}
+      <div className="min-w-0">
+        {primaryAddr ? (
+          <>
+            <div className="data truncate text-sm text-ink" title={primaryAddr}>
+              {primaryAddr}
+            </div>
+            {secondaryAddr && (
+              <div
+                className="data truncate text-xs text-ink-faint"
+                title={secondaryAddr}
+              >
+                {secondaryAddr}
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="text-sm text-ink-faint">No address</div>
+        )}
+      </div>
+
+      {/* Route / exit markers, then tags - one calm, scannable wrap. */}
+      {(hasMarkers || hasTags) && (
         <div className="flex flex-wrap items-center gap-1">
           {node.isExitNode && (
             <Chip variant="default" className="gap-1" title="Active exit node">
@@ -308,7 +289,11 @@ function MachineRow({
             </Chip>
           )}
           {node.advertisesExit && (
-            <Chip variant="warn" className="gap-1" title="Exit node awaiting approval">
+            <Chip
+              variant="warn"
+              className="gap-1"
+              title="Exit node awaiting approval"
+            >
               <Antenna className="h-3 w-3" aria-hidden />
               exit pending
             </Chip>
@@ -333,32 +318,61 @@ function MachineRow({
               {node.pendingRoutes.length} pending
             </Chip>
           )}
+          {node.expired && (
+            <Chip variant="critical" title="Key expired">
+              expired
+            </Chip>
+          )}
           {node.expiresSoon && (
             <Chip variant="warn" title="Key expires soon">
               expiring
             </Chip>
           )}
-          {!node.isExitNode &&
-            !node.advertisesExit &&
-            node.subnetRoutes.length === 0 &&
-            node.pendingRoutes.length === 0 &&
-            !node.expiresSoon && <span className="text-ink-faint">—</span>}
+          {visibleTags.map((tag) => (
+            <Tag key={tag}>{tag.replace(/^tag:/, "")}</Tag>
+          ))}
+          {extraTags > 0 && (
+            <Chip variant="default" mono>
+              +{extraTags}
+            </Chip>
+          )}
+          {node.invalidTags.length > 0 && (
+            <Chip variant="critical" mono title="Tags rejected by policy">
+              {node.invalidTags.length} invalid
+            </Chip>
+          )}
         </div>
-      </Td>
+      )}
 
-      {/* Last seen */}
-      <Td className="pr-4" align="right">
+      {/* Footer: last-seen on the left, reachability hint on the right. */}
+      <div className="mt-auto flex items-center justify-between gap-3 border-t border-line pt-2.5">
         {node.online ? (
           <span className="inline-flex items-center gap-1 text-xs text-online-600">
             <SignalHigh className="h-3.5 w-3.5" aria-hidden />
             connected
           </span>
         ) : (
-          <span className="data text-xs text-ink-muted" title={node.lastSeen ?? "never"}>
+          <span
+            className="data text-xs text-ink-muted"
+            title={node.lastSeen ?? "never"}
+          >
             {node.lastSeenLabel}
           </span>
         )}
-      </Td>
-    </Tr>
+
+        {series.length > 0 && (
+          <Sparkline
+            data={series}
+            tone={reachTone}
+            min={0}
+            max={1}
+            area
+            className="h-6 w-24"
+            aria-label={`Recent reachability for ${node.name}`}
+            title={`Recent reachability - ${node.online ? "online" : node.lastSeenLabel}`}
+          />
+        )}
+      </div>
+    </Link>
   );
 }
