@@ -14,9 +14,25 @@
 export { db, sqlite } from "./client";
 
 export {
+  readSetting,
+  readAllSettings,
+  writeSetting,
+  deleteSetting,
+} from "./settings";
+
+export {
+  recordSnapshot,
+  recordSnapshotThrottled,
+  latestSnapshot,
+  listSnapshots,
+} from "./snapshots";
+
+export {
   auditLog,
   appUser,
   session,
+  appSettings,
+  snapshots,
   SCHEMA_DDL,
   type AuditEntry,
   type NewAuditEntry,
@@ -24,5 +40,9 @@ export {
   type NewAppUser,
   type SessionRecord,
   type NewSessionRecord,
+  type AppSetting,
+  type NewAppSetting,
+  type Snapshot,
+  type NewSnapshot,
   type AuditDetail,
 } from "./schema";

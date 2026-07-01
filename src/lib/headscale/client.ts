@@ -1,9 +1,9 @@
 /**
  * Headtower's Headscale REST client - request core.
  *
- * SERVER-ONLY. This module reads `HEADSCALE_API_KEY` from the environment and
- * talks to the control plane directly; it must never be imported into a client
- * component or shipped to the browser. The resource modules
+ * SERVER-ONLY. This module resolves the connection (URL + API key) from the
+ * effective config and talks to the control plane directly; it must never be
+ * imported into a client component or shipped to the browser. The resource modules
  * (`nodes`, `users`, `pre-auth-keys`, `api-keys`, `routes`, `policy`, `dns`)
  * build on the `request()` helper exported here.
  *
@@ -35,92 +35,39 @@
  * state is projected from node fields + `approve_routes`, and DNS is managed in
  * the Headscale server config. See those modules for details.
  *
- * Every request is authenticated with `Authorization: Bearer ${HEADSCALE_API_KEY}`,
- * never cached, bounded by a ~5s timeout, and fails loud with a typed error.
+ * Every request is authenticated with `Authorization: Bearer <api key>`, never
+ * cached, bounded by a ~5s timeout, and fails loud with a typed error.
+ *
+ * The connection (URL + API key) comes from {@link getConfig}, the EFFECTIVE
+ * config = DB settings over the env bootstrap. That is what lets a connection set
+ * in the UI take effect immediately, without an env var or a restart.
  */
+
+import { getConfig } from "@/lib/config";
+import {
+  HeadscaleConfigError,
+  HeadscaleError,
+  HeadscaleNetworkError,
+  HeadscaleParseError,
+  HeadscaleRequestError,
+  HeadscaleTimeoutError,
+} from "./errors";
+
+// Re-exported so server callers keep importing errors from `@/lib/headscale`.
+// The classes live in the PURE ./errors module (no node/db) so client components
+// that render an error can import them without pulling this request core - and
+// therefore the config + database layers - into the browser bundle.
+export {
+  HeadscaleConfigError,
+  HeadscaleError,
+  HeadscaleNetworkError,
+  HeadscaleParseError,
+  HeadscaleRequestError,
+  HeadscaleTimeoutError,
+} from "./errors";
 
 const DEFAULT_TIMEOUT_MS = 5_000;
 const API_PREFIX = "/api";
-
-/** Base class for every error this client raises. */
-export class HeadscaleError extends Error {
-  constructor(message: string, options?: { cause?: unknown }) {
-    super(message, options);
-    this.name = "HeadscaleError";
-  }
-}
-
-/** Thrown when the client is misconfigured (missing/invalid env) or misused. */
-export class HeadscaleConfigError extends HeadscaleError {
-  constructor(message: string) {
-    super(message);
-    this.name = "HeadscaleConfigError";
-  }
-}
-
-/** Thrown when the request exceeds the timeout and is aborted. */
-export class HeadscaleTimeoutError extends HeadscaleError {
-  readonly timeoutMs: number;
-  constructor(method: string, url: string, timeoutMs: number) {
-    super(`Headscale ${method} ${url} timed out after ${timeoutMs}ms`);
-    this.name = "HeadscaleTimeoutError";
-    this.timeoutMs = timeoutMs;
-  }
-}
-
-/** Thrown when the request never reached the server (DNS/TLS/connection error). */
-export class HeadscaleNetworkError extends HeadscaleError {
-  constructor(method: string, url: string, cause: unknown) {
-    super(`Headscale ${method} ${url} failed to connect: ${describeCause(cause)}`, {
-      cause,
-    });
-    this.name = "HeadscaleNetworkError";
-  }
-}
-
-/** Thrown when Headscale answers with a non-2xx status. */
-export class HeadscaleRequestError extends HeadscaleError {
-  readonly status: number;
-  readonly statusText: string;
-  readonly method: string;
-  readonly url: string;
-  /** Raw response body text, for diagnostics. */
-  readonly body: string;
-  /** gRPC status code from the gateway error envelope, when present. */
-  readonly code?: number;
-
-  constructor(args: {
-    status: number;
-    statusText: string;
-    method: string;
-    url: string;
-    body: string;
-    code?: number;
-    detail?: string;
-  }) {
-    const suffix = args.detail ? ` - ${args.detail}` : "";
-    super(
-      `Headscale ${args.method} ${args.url} failed: ${args.status} ${args.statusText}${suffix}`,
-    );
-    this.name = "HeadscaleRequestError";
-    this.status = args.status;
-    this.statusText = args.statusText;
-    this.method = args.method;
-    this.url = args.url;
-    this.body = args.body;
-    this.code = args.code;
-  }
-}
-
-/** Thrown when a 2xx response body is present but is not valid JSON. */
-export class HeadscaleParseError extends HeadscaleError {
-  constructor(method: string, url: string, cause: unknown) {
-    super(`Headscale ${method} ${url} returned an unparseable body: ${describeCause(cause)}`, {
-      cause,
-    });
-    this.name = "HeadscaleParseError";
-  }
-}
 
 type QueryValue = string | number | boolean | undefined | null;
 
@@ -137,39 +84,26 @@ export interface RequestOptions {
   signal?: AbortSignal;
 }
 
-interface HeadscaleConfig {
+interface HeadscaleConnection {
   baseUrl: string;
   apiKey: string;
 }
 
-/** Reads and validates `HEADSCALE_URL` / `HEADSCALE_API_KEY` at call time. */
-function getConfig(): HeadscaleConfig {
-  const rawUrl = process.env.HEADSCALE_URL;
-  const apiKey = process.env.HEADSCALE_API_KEY;
-
-  if (!rawUrl) {
+/**
+ * Resolve the Headscale connection from the effective config at call time. Throws
+ * a {@link HeadscaleConfigError} when it has not been configured yet (env or UI),
+ * which the views render as an on-brand "not configured" panel.
+ */
+function resolveConnection(): HeadscaleConnection {
+  const { headscale } = getConfig();
+  if (!headscale) {
     throw new HeadscaleConfigError(
-      "HEADSCALE_URL is not set. Point it at your Headscale server, e.g. https://headscale.example.com",
+      "Headscale is not configured. Connect it in Headtower's setup, or set " +
+        "HEADSCALE_URL and HEADSCALE_API_KEY.",
     );
   }
-  if (!apiKey) {
-    throw new HeadscaleConfigError(
-      "HEADSCALE_API_KEY is not set. Generate one with `headscale apikeys create`.",
-    );
-  }
-
-  // Normalise: drop trailing slashes so we can append `/api/v1/...` cleanly.
-  const baseUrl = rawUrl.replace(/\/+$/, "");
-  try {
-    // Validate it is an absolute URL we can build on.
-    new URL(baseUrl);
-  } catch {
-    throw new HeadscaleConfigError(
-      `HEADSCALE_URL is not a valid absolute URL: ${JSON.stringify(rawUrl)}`,
-    );
-  }
-
-  return { baseUrl, apiKey };
+  // `headscale.url` is already validated and normalised by getConfig().
+  return { baseUrl: headscale.url, apiKey: headscale.apiKey };
 }
 
 function buildUrl(
@@ -188,11 +122,6 @@ function buildUrl(
     }
   }
   return url.toString();
-}
-
-function describeCause(cause: unknown): string {
-  if (cause instanceof Error) return cause.message;
-  return String(cause);
 }
 
 /** Pulls a human-readable detail + gRPC code out of a gateway error body. */
@@ -232,7 +161,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     );
   }
 
-  const { baseUrl, apiKey } = getConfig();
+  const { baseUrl, apiKey } = resolveConnection();
   const method = (options.method ?? "GET").toUpperCase();
   const url = buildUrl(baseUrl, path, options.query);
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;

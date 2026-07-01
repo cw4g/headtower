@@ -12,8 +12,8 @@ import { getConfig } from "@/lib/config";
 export function isCurrentApiKey(prefix: string): boolean {
   if (!prefix) return false;
   try {
-    const key = getConfig().headscale.apiKey;
-    return key.length > 0 && key.startsWith(prefix);
+    const key = getConfig().headscale?.apiKey;
+    return key != null && key.length > 0 && key.startsWith(prefix);
   } catch {
     // Not configured: there is no current key to protect.
     return false;

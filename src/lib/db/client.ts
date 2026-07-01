@@ -27,7 +27,14 @@ import { dirname } from "node:path";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { drizzle } from "drizzle-orm/sqlite-proxy";
 import type { AsyncRemoteCallback } from "drizzle-orm/sqlite-proxy";
-import { appUser, auditLog, SCHEMA_DDL, session } from "./schema";
+import {
+  appSettings,
+  appUser,
+  auditLog,
+  SCHEMA_DDL,
+  session,
+  snapshots,
+} from "./schema";
 
 if (typeof window !== "undefined") {
   // A server-only violation is a programming error: surface it loudly.
@@ -144,5 +151,5 @@ const remoteCallback: AsyncRemoteCallback = async (sqlText, params, method) => {
 };
 
 export const db = drizzle(remoteCallback, {
-  schema: { auditLog, appUser, session },
+  schema: { auditLog, appUser, session, appSettings, snapshots },
 });

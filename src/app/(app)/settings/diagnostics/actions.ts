@@ -21,7 +21,7 @@ import {
   HeadscaleRequestError,
   HeadscaleTimeoutError,
 } from "@/lib/headscale";
-import { ConfigError, getConfig } from "@/lib/config";
+import { getConfig } from "@/lib/config";
 
 export type CheckStatus = "pass" | "fail" | "skip";
 
@@ -49,15 +49,8 @@ export async function runDiagnostics(): Promise<DiagnosticsReport> {
   const ranAt = new Date().toISOString();
 
   // Configuration gate: without a URL + key there is nothing to reach.
-  let target: string | null = null;
-  try {
-    const config = getConfig();
-    target = hostOf(config.headscale.url);
-  } catch (err) {
-    const detail =
-      err instanceof ConfigError
-        ? err.message
-        : "Headscale is not configured.";
+  const config = getConfig();
+  if (!config.headscale) {
     return {
       ranAt,
       target: null,
@@ -66,8 +59,8 @@ export async function runDiagnostics(): Promise<DiagnosticsReport> {
           id: "reachability",
           label: "Control plane reachable",
           status: "fail",
-          detail,
-          hint: "Set HEADSCALE_URL and HEADSCALE_API_KEY, then run the check again.",
+          detail: "Headscale is not configured.",
+          hint: "Connect Headscale in setup, or set HEADSCALE_URL and HEADSCALE_API_KEY, then run the check again.",
         },
         skipped("version", "Server API version", "Waiting on a reachable control plane."),
         skipped(
@@ -78,6 +71,7 @@ export async function runDiagnostics(): Promise<DiagnosticsReport> {
       ],
     };
   }
+  const target: string = hostOf(config.headscale.url);
 
   // One authenticated probe powers all three signals.
   try {

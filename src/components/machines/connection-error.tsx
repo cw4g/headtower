@@ -1,13 +1,16 @@
 import * as React from "react";
 import { PlugZap, KeyRound, ServerCrash, TimerOff } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+// Import the error classes from their PURE modules, not the barrels: the
+// Headscale barrel and config index reach the request/DB layers (node:sqlite),
+// and this component is pulled into the client bundle by the route error boundary.
 import {
   HeadscaleConfigError,
   HeadscaleNetworkError,
   HeadscaleTimeoutError,
   HeadscaleRequestError,
-} from "@/lib/headscale";
-import { ConfigError } from "@/lib/config";
+} from "@/lib/headscale/errors";
+import { ConfigError } from "@/lib/config/types";
 
 interface Described {
   icon: LucideIcon;
@@ -23,8 +26,8 @@ function describe(error: unknown): Described {
       title: "Headscale isn't configured",
       detail: error.message,
       hints: [
-        "Set HEADSCALE_URL to your control plane, e.g. https://headscale.example.com",
-        "Set HEADSCALE_API_KEY from `headscale apikeys create`",
+        "Connect Headscale from the in-app setup wizard at /setup",
+        "Or set HEADSCALE_URL and HEADSCALE_API_KEY in the environment",
       ],
     };
   }

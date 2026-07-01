@@ -17,60 +17,15 @@ import { Chip, Tag } from "@/components/ui/chip";
 import { Input } from "@/components/ui/field";
 import { Kbd } from "@/components/ui/kbd";
 import { cn } from "@/lib/cn";
-import { nodeDot, ownerLabel, type NodeView } from "@/lib/machines";
-
-type StatusFilter = "all" | "online" | "offline" | "issues";
-
-const FILTERS: { id: StatusFilter; label: string }[] = [
-  { id: "all", label: "All" },
-  { id: "online", label: "Online" },
-  { id: "offline", label: "Offline" },
-  { id: "issues", label: "Needs attention" },
-];
-
-function hasIssue(node: NodeView): boolean {
-  return (
-    node.expired ||
-    node.expiresSoon ||
-    node.invalidTags.length > 0 ||
-    node.advertisesExit ||
-    node.pendingRoutes.length > 0
-  );
-}
-
-function matchesQuery(node: NodeView, q: string): boolean {
-  if (!q) return true;
-  const haystack = [
-    node.name,
-    node.hostname,
-    node.user.name,
-    node.user.displayName,
-    node.user.email,
-    node.registerMethod,
-    ...node.addresses,
-    ...node.tags,
-  ]
-    .join(" ")
-    .toLowerCase();
-  return q
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean)
-    .every((term) => haystack.includes(term));
-}
-
-function matchesStatus(node: NodeView, filter: StatusFilter): boolean {
-  switch (filter) {
-    case "online":
-      return node.online && !node.expired;
-    case "offline":
-      return !node.online && !node.expired;
-    case "issues":
-      return hasIssue(node);
-    default:
-      return true;
-  }
-}
+import {
+  nodeDot,
+  ownerLabel,
+  matchesQuery,
+  matchesStatus,
+  MACHINE_STATUS_FILTERS,
+  type StatusFilter,
+  type NodeView,
+} from "@/lib/machines";
 
 export function MachinesTable({ nodes }: { nodes: NodeView[] }) {
   const router = useRouter();

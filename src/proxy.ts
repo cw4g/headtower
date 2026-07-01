@@ -12,13 +12,22 @@
  * request APIs beyond `next/server`), keeping the boundary lean as the proxy
  * docs advise. In operator mode (OIDC unset) it is a pass-through, so the app
  * keeps working with just HEADSCALE_API_KEY.
+ *
+ * The NEEDS-SETUP gate (redirect to /setup when no Headscale connection is
+ * configured) is not decided here: whether a connection exists can live in the
+ * DB, which the proxy intentionally never reads. That authoritative check runs in
+ * the app-shell (a Server Component). The proxy's only job for setup is to keep
+ * /setup reachable - always public - so the wizard loads even before sign-in.
  */
 
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth/session-token";
 
-/** Paths always allowed through without a session (the sign-in surface itself). */
-const PUBLIC_PREFIXES = ["/login"];
+/**
+ * Paths always allowed through without a session: the sign-in surface and the
+ * first-run setup wizard (which must load before anything is configured).
+ */
+const PUBLIC_PREFIXES = ["/login", "/setup"];
 
 /**
  * OIDC mode is active only when all three provider vars are present, mirroring

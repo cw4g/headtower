@@ -6,17 +6,19 @@ import {
   Antenna,
   Cpu,
   Fingerprint,
+  History,
   KeyRound,
   MapPin,
   Network,
+  Radio,
   Route as RouteIcon,
-  Clock,
   Waypoints,
 } from "lucide-react";
 import { nodes as nodesApi, HeadscaleRequestError } from "@/lib/headscale";
 import type { Node } from "@/lib/headscale";
 import { getAgentPeers } from "@/lib/agent";
 import { sessionCan } from "@/lib/authz";
+import { listAudit, type AuditEntry } from "@/lib/audit";
 import {
   toNodeView,
   nodeDot,
@@ -27,15 +29,27 @@ import {
   type NodeAgentInfo,
   type NodeView,
 } from "@/lib/machines";
-import { Card, CardHeader, CardTitle, CardBody } from "@/components/ui/card";
+import { Sparkline, Timeline, type TimelineEvent } from "@/components/charts";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardBody,
+  CardFooter,
+} from "@/components/ui/card";
 import { Chip, Tag } from "@/components/ui/chip";
 import { StatusDot } from "@/components/ui/status-dot";
 import { CopyButton } from "@/components/ui/copy-button";
 import { ConnectionError } from "@/components/machines/connection-error";
 import { NodeActions } from "@/components/machines/node-actions";
+import { humanizeAction, summarizeDetail } from "../../audit/format";
 import { cn } from "@/lib/cn";
 
 export const dynamic = "force-dynamic";
+
+/** Trailing window, in days, for the per-node activity sparkline. */
+const ACTIVITY_DAYS = 14;
+const DAY_MS = 86_400_000;
 
 export default async function MachineDetailPage({
   params,
@@ -55,14 +69,20 @@ export default async function MachineDetailPage({
     error = err;
   }
 
-  // Day-to-day device ops are gated on machines.write; read-only roles see the
-  // detail without the mutating Actions panel.
-  const canManage = await sessionCan("machines.write");
+  // A stable const so the closures below narrow cleanly to a non-null Node.
+  const found = node;
 
-  // Best-effort agent enrichment for this node; null when no sidecar matched.
-  const agent = node
-    ? (await getAgentPeers()).lookup(node.name, node.ipAddresses ?? [])
-    : null;
+  // Enrichment and gating resolve concurrently: role (for the Actions panel),
+  // the optional agent sidecar (device facts), and this node's audit history.
+  const [canManage, agent, nodeAudit] = await Promise.all([
+    sessionCan("machines.write"),
+    found
+      ? getAgentPeers().then((peers) =>
+          peers.lookup(found.name, found.ipAddresses ?? []),
+        )
+      : Promise.resolve<NodeAgentInfo | null>(null),
+    found ? loadNodeAudit(found.id) : Promise.resolve<AuditEntry[]>([]),
+  ]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -76,25 +96,48 @@ export default async function MachineDetailPage({
 
       {error ? (
         <ConnectionError error={error} />
-      ) : node ? (
-        <MachineDetail node={node} canManage={canManage} agent={agent} />
+      ) : found ? (
+        <MachineDetail
+          node={found}
+          canManage={canManage}
+          agent={agent}
+          audit={nodeAudit}
+        />
       ) : null}
     </div>
   );
+}
+
+/**
+ * Read this node's slice of the audit trail. Node mutations (rename, tag,
+ * expire, route approval, ...) all record `targetType: "node"` with the node id
+ * as `targetId`, so we pull the recent node page and keep the matching rows.
+ * Best-effort: a flaky local store yields an empty list, never a failed render.
+ */
+async function loadNodeAudit(nodeId: string): Promise<AuditEntry[]> {
+  try {
+    const page = await listAudit({ targetType: "node", limit: 200 });
+    return page.entries.filter((entry) => entry.targetId === nodeId);
+  } catch {
+    return [];
+  }
 }
 
 function MachineDetail({
   node,
   canManage,
   agent,
+  audit,
 }: {
   node: Node;
   canManage: boolean;
   agent: NodeAgentInfo | null;
+  audit: AuditEntry[];
 }) {
   const now = nowMs();
   const view = toNodeView(node, now, agent);
   const dot = nodeDot(view);
+  const activity = activityByDay(audit, now);
 
   return (
     <div className="flex flex-col gap-6">
@@ -105,7 +148,8 @@ function MachineDetail({
           <AddressesCard view={view} />
           {view.agent && <SystemCard agent={view.agent} />}
           <RoutesCard view={view} node={node} />
-          <IdentityCard node={node} view={view} />
+          <LifecycleCard node={node} view={view} now={now} />
+          <IdentityCard view={view} />
         </div>
 
         <div className="flex flex-col gap-4">
@@ -124,7 +168,8 @@ function MachineDetail({
             </Card>
           )}
 
-          <TimelineCard view={view} now={now} />
+          <ConnectivityCard view={view} dot={dot} now={now} />
+          <ActivityCard entries={audit} activity={activity} now={now} />
         </div>
       </div>
     </div>
@@ -229,6 +274,51 @@ function DataRow({
   );
 }
 
+/** Small vertical stat: label, primary readout, secondary mono detail. */
+function TimeStat({
+  label,
+  primary,
+  secondary,
+  tone = "default",
+}: {
+  label: string;
+  primary: string;
+  secondary: string;
+  tone?: "default" | "online" | "warn" | "critical";
+}) {
+  const toneClass = {
+    default: "text-ink",
+    online: "text-online-600",
+    warn: "text-warn-500",
+    critical: "text-critical-500",
+  }[tone];
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-faint">
+        {label}
+      </span>
+      <span className={cn("text-sm font-medium", toneClass)}>{primary}</span>
+      <span className="data text-xs text-ink-faint">{secondary}</span>
+    </div>
+  );
+}
+
+/** Uppercase micro-heading used to label a section inside a card body. */
+function FieldLabel({
+  icon: Icon,
+  children,
+}: {
+  icon?: typeof Network;
+  children: React.ReactNode;
+}) {
+  return (
+    <span className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.08em] text-ink-faint">
+      {Icon && <Icon className="h-3.5 w-3.5" aria-hidden />}
+      {children}
+    </span>
+  );
+}
+
 function AddressesCard({ view }: { view: NodeView }) {
   const extras = view.addresses.filter(
     (a) => a !== view.ipv4 && a !== view.ipv6,
@@ -293,10 +383,7 @@ function SystemCard({ agent }: { agent: NodeAgentInfo }) {
           </DataRow>
         )}
         <div className="flex flex-col gap-1.5 py-2.5">
-          <span className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.08em] text-ink-faint">
-            <Waypoints className="h-3.5 w-3.5" aria-hidden />
-            Endpoints
-          </span>
+          <FieldLabel icon={Waypoints}>Endpoints</FieldLabel>
           {agent.endpoints.length > 0 ? (
             <div className="flex flex-col gap-1">
               {agent.endpoints.map((endpoint) => (
@@ -387,10 +474,7 @@ function RouteGroup({
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.08em] text-ink-faint">
-        <Icon className="h-3.5 w-3.5" aria-hidden />
-        {label}
-      </span>
+      <FieldLabel icon={Icon}>{label}</FieldLabel>
       {routes.length > 0 ? (
         <div className="flex flex-wrap gap-1.5">
           {routes.map((route) =>
@@ -410,7 +494,104 @@ function RouteGroup({
   );
 }
 
-function IdentityCard({ node, view }: { node: Node; view: NodeView }) {
+/**
+ * Key material and expiry, anchored by a lifecycle Timeline that plots the node
+ * from registration through its last contact to key expiry, with a "now" marker.
+ */
+function LifecycleCard({
+  node,
+  view,
+  now,
+}: {
+  node: Node;
+  view: NodeView;
+  now: number;
+}) {
+  const { events, start, end } = lifecycleEvents(view, now);
+  const expiryTag = view.expired
+    ? "expired"
+    : view.expiry
+      ? "active"
+      : "no expiry";
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <KeyRound className="h-4 w-4 text-ink-faint" aria-hidden />
+          Keys &amp; expiry
+        </CardTitle>
+        <span className="data text-xs text-ink-faint">{expiryTag}</span>
+      </CardHeader>
+      <CardBody className="flex flex-col gap-5">
+        <Timeline
+          events={events}
+          start={start}
+          end={end}
+          now={now}
+          formatTime={fmtDayUtc}
+          aria-label="Node key lifecycle: registration, last contact, expiry"
+        />
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <TimeStat
+            label="First registered"
+            primary={relativeTime(view.createdAt, now)}
+            secondary={formatUtc(view.createdAt)}
+          />
+          <TimeStat
+            label="Key expiry"
+            primary={
+              view.expiry
+                ? view.expired
+                  ? "Expired"
+                  : relativeTime(view.expiry, now)
+                : "Never expires"
+            }
+            secondary={view.expiry ? formatUtc(view.expiry) : "No expiry set"}
+            tone={
+              view.expired ? "critical" : view.expiresSoon ? "warn" : "default"
+            }
+          />
+        </div>
+
+        <div className="flex flex-col">
+          <span className="mb-1">
+            <FieldLabel icon={Fingerprint}>Key material</FieldLabel>
+          </span>
+          <KeyRow label="Machine key" value={node.machineKey} />
+          <KeyRow label="Node key" value={node.nodeKey} />
+          <KeyRow label="Disco key" value={node.discoKey} />
+          {node.preAuthKey && (
+            <DataRow
+              label="Pre-auth key"
+              mono
+              copy={node.preAuthKey.id}
+              title={`Pre-auth key #${node.preAuthKey.id}`}
+            >
+              #{node.preAuthKey.id}
+              {node.preAuthKey.ephemeral ? " · ephemeral" : ""}
+              {node.preAuthKey.reusable ? " · reusable" : ""}
+            </DataRow>
+          )}
+        </div>
+      </CardBody>
+    </Card>
+  );
+}
+
+function KeyRow({ label, value }: { label: string; value: string }) {
+  if (!value) return null;
+  return (
+    <DataRow label={label} mono copy={value} title={value}>
+      <span className="inline-block max-w-[14rem] truncate align-bottom md:max-w-[20rem]">
+        {value}
+      </span>
+    </DataRow>
+  );
+}
+
+function IdentityCard({ view }: { view: NodeView }) {
   return (
     <Card>
       <CardHeader>
@@ -450,101 +631,259 @@ function IdentityCard({ node, view }: { node: Node; view: NodeView }) {
             <span className="text-ink-faint">untagged</span>
           )}
         </DataRow>
-
-        <KeyRow label="Machine key" value={node.machineKey} />
-        <KeyRow label="Node key" value={node.nodeKey} />
-        <KeyRow label="Disco key" value={node.discoKey} />
-
-        {node.preAuthKey && (
-          <DataRow
-            label="Pre-auth key"
-            mono
-            copy={node.preAuthKey.id}
-            title={`Pre-auth key #${node.preAuthKey.id}`}
-          >
-            #{node.preAuthKey.id}
-            {node.preAuthKey.ephemeral ? " · ephemeral" : ""}
-            {node.preAuthKey.reusable ? " · reusable" : ""}
-          </DataRow>
-        )}
       </CardBody>
     </Card>
   );
 }
 
-function KeyRow({ label, value }: { label: string; value: string }) {
-  if (!value) return null;
-  return (
-    <DataRow label={label} mono copy={value} title={value}>
-      <span className="inline-block max-w-[14rem] truncate align-bottom md:max-w-[20rem]">
-        {value}
-      </span>
-    </DataRow>
-  );
-}
+/** Reachability at a glance: current state, last contact, register method. */
+function ConnectivityCard({
+  view,
+  dot,
+  now,
+}: {
+  view: NodeView;
+  dot: { status: "online" | "warn" | "critical" | "idle"; label: string };
+  now: number;
+}) {
+  const reach = view.online
+    ? { label: "Reachable", variant: "online" as const }
+    : view.expired
+      ? { label: "Key expired", variant: "critical" as const }
+      : { label: "Offline", variant: "default" as const };
 
-function TimelineCard({ view, now }: { view: NodeView; now: number }) {
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Clock className="h-4 w-4 text-ink-faint" aria-hidden />
-          Timeline
+          <Radio className="h-4 w-4 text-ink-faint" aria-hidden />
+          Connectivity
         </CardTitle>
+        <StatusDot status={dot.status} pulse={view.online} />
       </CardHeader>
       <CardBody className="flex flex-col gap-3">
         <TimeStat
           label="Last seen"
-          primary={view.online ? "Connected now" : relativeTime(view.lastSeen, now)}
+          primary={
+            view.online ? "Connected now" : relativeTime(view.lastSeen, now)
+          }
           secondary={view.online ? "Live session" : formatUtc(view.lastSeen)}
           tone={view.online ? "online" : "default"}
         />
-        <TimeStat
-          label="First registered"
-          primary={relativeTime(view.createdAt, now)}
-          secondary={formatUtc(view.createdAt)}
-        />
-        <TimeStat
-          label="Key expiry"
-          primary={
-            view.expiry
-              ? view.expired
-                ? "Expired"
-                : relativeTime(view.expiry, now)
-              : "Never expires"
-          }
-          secondary={view.expiry ? formatUtc(view.expiry) : "No expiry set"}
-          tone={view.expired ? "critical" : view.expiresSoon ? "warn" : "default"}
-        />
+        <div className="flex items-center justify-between gap-2 border-t border-line pt-3">
+          <FieldLabel>Reachability</FieldLabel>
+          <Chip variant={reach.variant}>{reach.label}</Chip>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <FieldLabel>Registered via</FieldLabel>
+          <span className="text-sm text-ink">{view.registerMethod}</span>
+        </div>
       </CardBody>
     </Card>
   );
 }
 
-function TimeStat({
-  label,
-  primary,
-  secondary,
-  tone = "default",
+/**
+ * Per-node operator history: a 14-day activity sparkline over the recorded
+ * actions, then the most recent entries. Graceful when the node has never been
+ * touched (or the audit store is unavailable) — both collapse to a quiet note.
+ */
+function ActivityCard({
+  entries,
+  activity,
+  now,
 }: {
-  label: string;
-  primary: string;
-  secondary: string;
-  tone?: "default" | "online" | "warn" | "critical";
+  entries: AuditEntry[];
+  activity: number[];
+  now: number;
 }) {
-  const toneClass = {
-    default: "text-ink",
-    online: "text-online-600",
-    warn: "text-warn-500",
-    critical: "text-critical-500",
-  }[tone];
+  const windowCount = activity.reduce((total, n) => total + n, 0);
+  const recent = entries.slice(0, 6);
+  const total = entries.length;
+
   return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-faint">
-        {label}
-      </span>
-      <span className={cn("text-sm font-medium", toneClass)}>{primary}</span>
-      <span className="data text-xs text-ink-faint">{secondary}</span>
-    </div>
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <History className="h-4 w-4 text-ink-faint" aria-hidden />
+          Recent activity
+        </CardTitle>
+        {total > 0 && (
+          <span className="data text-xs text-ink-faint">{total}</span>
+        )}
+      </CardHeader>
+      <CardBody className="flex flex-col gap-4">
+        {windowCount > 0 && (
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-baseline justify-between">
+              <FieldLabel>{ACTIVITY_DAYS}-day trend</FieldLabel>
+              <span className="data text-xs text-ink-muted">
+                {windowCount} {windowCount === 1 ? "event" : "events"}
+              </span>
+            </div>
+            <Sparkline
+              data={activity}
+              tone="beacon"
+              area
+              className="h-10"
+              aria-label={`Console activity over ${ACTIVITY_DAYS} days, ${windowCount} events`}
+            />
+          </div>
+        )}
+
+        {recent.length > 0 ? (
+          <ul className="flex flex-col">
+            {recent.map((entry) => (
+              <ActivityRow key={entry.id} entry={entry} now={now} />
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-ink-faint">
+            No recorded actions for this node yet.
+          </p>
+        )}
+      </CardBody>
+      {total > recent.length && (
+        <CardFooter>
+          <Link
+            href="/audit?targetType=node"
+            className="text-xs font-medium text-beacon-500 transition-colors hover:text-beacon-400"
+          >
+            Full audit trail →
+          </Link>
+        </CardFooter>
+      )}
+    </Card>
   );
+}
+
+function ActivityRow({ entry, now }: { entry: AuditEntry; now: number }) {
+  const date = entry.ts instanceof Date ? entry.ts : new Date(entry.ts);
+  const iso = Number.isNaN(date.getTime()) ? null : date.toISOString();
+  const detail = summarizeDetail(entry.detail);
+
+  return (
+    <li className="flex flex-col gap-0.5 border-b border-line py-2.5 last:border-0">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-sm text-ink">{humanizeAction(entry.action)}</span>
+        <span
+          className="data shrink-0 text-xs text-ink-faint"
+          title={iso ? formatUtc(iso) : undefined}
+        >
+          {relativeTime(iso, now)}
+        </span>
+      </div>
+      <div className="flex items-center gap-1.5 text-xs text-ink-faint">
+        <span className="data truncate">{entry.actor}</span>
+        {detail && (
+          <>
+            <span aria-hidden>·</span>
+            <span className="data truncate" title={detail}>
+              {detail}
+            </span>
+          </>
+        )}
+      </div>
+    </li>
+  );
+}
+
+/* --- Derivations ---------------------------------------------------------- */
+
+/**
+ * Bucket this node's audit entries into a trailing `ACTIVITY_DAYS` daily series,
+ * oldest → newest (so it feeds a left-to-right sparkline). Entries outside the
+ * window are ignored; the result is all-zero when nothing recent is recorded.
+ */
+function activityByDay(entries: AuditEntry[], now: number): number[] {
+  const buckets = new Array<number>(ACTIVITY_DAYS).fill(0);
+  for (const entry of entries) {
+    const t =
+      entry.ts instanceof Date ? entry.ts.getTime() : new Date(entry.ts).getTime();
+    if (!Number.isFinite(t)) continue;
+    const idx = Math.floor((now - t) / DAY_MS);
+    if (idx >= 0 && idx < ACTIVITY_DAYS) buckets[ACTIVITY_DAYS - 1 - idx] += 1;
+  }
+  return buckets;
+}
+
+/**
+ * Lifecycle events for the key Timeline: registration, last contact (only while
+ * offline — a live node's last contact is "now"), and key expiry, toned by
+ * health. The axis is padded around the events and "now" so the marker always
+ * lands inside the frame even when every event clusters together.
+ */
+function lifecycleEvents(
+  view: NodeView,
+  now: number,
+): { events: TimelineEvent[]; start: number; end: number } {
+  const events: TimelineEvent[] = [];
+  const stamps: number[] = [now];
+
+  const created = view.createdAt ? Date.parse(view.createdAt) : NaN;
+  if (!Number.isNaN(created)) {
+    events.push({
+      id: "created",
+      label: "Registered",
+      time: created,
+      tone: "neutral",
+      detail: formatUtc(view.createdAt),
+    });
+    stamps.push(created);
+  }
+
+  if (view.lastSeen && !view.online) {
+    const seen = Date.parse(view.lastSeen);
+    if (!Number.isNaN(seen)) {
+      events.push({
+        id: "seen",
+        label: "Last seen",
+        time: seen,
+        tone: "neutral",
+        detail: formatUtc(view.lastSeen),
+      });
+      stamps.push(seen);
+    }
+  }
+
+  if (view.expiry) {
+    const exp = Date.parse(view.expiry);
+    if (!Number.isNaN(exp)) {
+      events.push({
+        id: "expiry",
+        label: view.expired ? "Key expired" : "Key expiry",
+        time: exp,
+        tone: view.expired ? "critical" : view.expiresSoon ? "warn" : "online",
+        detail: formatUtc(view.expiry),
+      });
+      stamps.push(exp);
+    }
+  }
+
+  const lo = Math.min(...stamps);
+  const hi = Math.max(...stamps);
+  const pad = Math.max((hi - lo) * 0.06, 60_000);
+  return { events, start: lo - pad, end: hi + pad };
+}
+
+/** Deterministic UTC "Mon D" tick label, matching the console's UTC discipline. */
+const MONTHS_UTC = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+function fmtDayUtc(t: number): string {
+  const d = new Date(t);
+  if (Number.isNaN(d.getTime())) return "—";
+  return `${MONTHS_UTC[d.getUTCMonth()]} ${d.getUTCDate()}`;
 }

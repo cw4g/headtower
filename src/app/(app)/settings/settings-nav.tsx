@@ -3,7 +3,14 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, KeyRound, KeySquare, type LucideIcon } from "lucide-react";
+import {
+  Activity,
+  KeyRound,
+  KeySquare,
+  PlugZap,
+  ShieldCheck,
+  type LucideIcon,
+} from "lucide-react";
 import { cn } from "@/lib/cn";
 
 interface SettingsNavItem {
@@ -14,6 +21,18 @@ interface SettingsNavItem {
 }
 
 const ITEMS: SettingsNavItem[] = [
+  {
+    label: "Connection",
+    href: "/settings/connection",
+    icon: PlugZap,
+    description: "Headscale URL + key",
+  },
+  {
+    label: "Authentication",
+    href: "/settings/authentication",
+    icon: ShieldCheck,
+    description: "Sign-in + OIDC",
+  },
   {
     label: "Pre-auth keys",
     href: "/settings/pre-auth-keys",

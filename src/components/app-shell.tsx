@@ -5,6 +5,7 @@ import { ConsoleTopBar } from "@/components/console-top-bar";
 import type { Account } from "@/components/account-menu";
 import { getSession } from "@/lib/auth";
 import { isOidcEnabled } from "@/lib/auth/oidc";
+import { getConfig } from "@/lib/config";
 import { ROLE_LABELS } from "@/lib/rbac";
 import { THEME_COOKIE, normalizeTheme } from "@/lib/theme";
 
@@ -15,6 +16,13 @@ import { THEME_COOKIE, normalizeTheme } from "@/lib/theme";
  * and performs the secure (db-backed) auth check that complements the proxy gate.
  */
 export async function AppShell({ children }: { children: React.ReactNode }) {
+  // Needs-setup gate: with no Headscale connection (neither env nor UI-set), the
+  // console can't report anything, so send the operator to the first-run wizard.
+  // This is the authoritative, DB-aware check; the proxy only allow-lists /setup.
+  if (!getConfig().headscale) {
+    redirect("/setup");
+  }
+
   const session = await getSession();
 
   // The saved theme, read once here so the top-bar toggle renders its active

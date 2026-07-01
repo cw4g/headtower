@@ -254,3 +254,166 @@ export function nodeDot(view: Pick<NodeView, "online" | "expired">): {
 export function ownerLabel(user: NodeView["user"]): string {
   return user.displayName || user.name || user.email || "—";
 }
+
+/* ------------------------------------------------------------------ *
+ * View mode - Table | Cards, a sticky display preference (cookie).
+ * ------------------------------------------------------------------ */
+
+/** The two machine list presentations. */
+export type MachineViewMode = "table" | "cards";
+
+/** Cookie carrying the operator's machines-view preference. */
+export const MACHINES_VIEW_COOKIE = "ht_machines_view";
+
+/** Persist the preference for a year; a non-secret UI cookie. */
+export const MACHINES_VIEW_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
+
+/** Narrow an untrusted cookie value to a view mode (table is the default). */
+export function normalizeMachineView(
+  value: string | null | undefined,
+): MachineViewMode {
+  return value === "cards" ? "cards" : "table";
+}
+
+/* ------------------------------------------------------------------ *
+ * Filtering - shared verbatim by the table and card views so both read
+ * the same query grammar and status segments.
+ * ------------------------------------------------------------------ */
+
+/** The status segments offered on the machines toolbar. */
+export type StatusFilter = "all" | "online" | "offline" | "issues";
+
+/** Segment definitions (id + label), in display order. */
+export const MACHINE_STATUS_FILTERS: { id: StatusFilter; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "online", label: "Online" },
+  { id: "offline", label: "Offline" },
+  { id: "issues", label: "Needs attention" },
+];
+
+/** A node the operator likely needs to act on (expiry, rejected tags, pending). */
+export function hasIssue(node: NodeView): boolean {
+  return (
+    node.expired ||
+    node.expiresSoon ||
+    node.invalidTags.length > 0 ||
+    node.advertisesExit ||
+    node.pendingRoutes.length > 0
+  );
+}
+
+/** Free-text match across a node's names, owner, addresses and tags. */
+export function matchesQuery(node: NodeView, q: string): boolean {
+  if (!q) return true;
+  const haystack = [
+    node.name,
+    node.hostname,
+    node.user.name,
+    node.user.displayName,
+    node.user.email,
+    node.registerMethod,
+    ...node.addresses,
+    ...node.tags,
+  ]
+    .join(" ")
+    .toLowerCase();
+  return q
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((term) => haystack.includes(term));
+}
+
+/** Status-segment match (online / offline / needs-attention). */
+export function matchesStatus(node: NodeView, filter: StatusFilter): boolean {
+  switch (filter) {
+    case "online":
+      return node.online && !node.expired;
+    case "offline":
+      return !node.online && !node.expired;
+    case "issues":
+      return hasIssue(node);
+    default:
+      return true;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Reachability sparkline - a derived hint, not real history.
+ *
+ * The control plane records only a single `lastSeen` instant, so there is no
+ * true time-series to plot. We synthesise a short, deterministic "recent
+ * reachability" trend from the facts we do hold - online state and the age of
+ * the last contact - bucketed across a fixed recent window. A live node reads as
+ * a steady strong signal; a node last seen partway through the window shows the
+ * signal falling away at that point; a node dark for the whole window (or never
+ * seen) yields an empty series so the card omits the sparkline.
+ *
+ * Determinism matters: identical inputs must render the same on the server and
+ * after hydration, so the subtle per-node ripple is seeded from the node id and
+ * the clock is passed in rather than read inline. Callers should plot it against
+ * a fixed [0, 1] domain (`min={0} max={1}`) so the ripple stays calm instead of
+ * being stretched to fill the height.
+ * ------------------------------------------------------------------ */
+
+/** Points in the reachability series. */
+const REACH_BUCKETS = 24;
+/** Span of one bucket; 24 x 1h => a rolling 24-hour window. */
+const REACH_BUCKET_MS = 60 * 60 * 1000;
+
+/** Keep a value inside the plotted band (a touch above 0 so the floor reads). */
+function clampReach(v: number): number {
+  return v < 0.04 ? 0.04 : v > 1 ? 1 : v;
+}
+
+/** FNV-1a string hash -> 32-bit unsigned seed. */
+function hashString(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+/** mulberry32 PRNG - tiny, deterministic, ample for cosmetic jitter. */
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Recent-reachability series (oldest -> newest), or an empty array when there is
+ * nothing recent to hint. Pass the request clock so the server render and the
+ * client hydration agree on the drop-off position.
+ */
+export function reachabilitySeries(
+  node: Pick<NodeView, "id" | "online" | "expired" | "lastSeen">,
+  nowMs: number,
+): number[] {
+  const rand = mulberry32(hashString(node.id));
+  const jitter = (level: number, spread: number) =>
+    clampReach(level + (rand() - 0.5) * spread);
+
+  // A live node reads as a steady strong signal across the whole window.
+  if (node.online && !node.expired) {
+    return Array.from({ length: REACH_BUCKETS }, () => jitter(0.9, 0.12));
+  }
+
+  const seen = node.lastSeen ? Date.parse(node.lastSeen) : NaN;
+  if (Number.isNaN(seen)) return []; // never seen -> nothing to plot
+
+  const windowStart = nowMs - REACH_BUCKETS * REACH_BUCKET_MS;
+  if (seen <= windowStart) return []; // dark for the whole window -> omit
+
+  // Reachable up to the bucket holding lastSeen, then the signal drops away.
+  const dropAt = Math.round((seen - windowStart) / REACH_BUCKET_MS);
+  return Array.from({ length: REACH_BUCKETS }, (_, i) =>
+    i <= dropAt ? jitter(0.82, 0.12) : jitter(0.08, 0.05),
+  );
+}

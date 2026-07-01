@@ -2,20 +2,26 @@
  * Headtower local database schema (server-only).
  *
  * Headscale stays the source of truth for tailnet data; this database holds
- * ONLY Headtower's own state. Three tables:
+ * ONLY Headtower's own state. Five tables:
  *
- *   audit_log  append-only operator action trail (one row per mutation)
- *   app_user   Headtower accounts (OIDC `sub` -> role), distinct from tailnet users
- *   session    server-side login sessions referencing app_user
+ *   audit_log     append-only operator action trail (one row per mutation)
+ *   app_user      Headtower accounts (OIDC `sub` -> role), distinct from tailnet users
+ *   session       server-side login sessions referencing app_user
+ *   app_settings  key/value store for the in-app configuration (see @/lib/config):
+ *                 the Headscale connection + OIDC provider, editable at runtime and
+ *                 overriding the env bootstrap. Secret values are stored encoded.
+ *   snapshot      throttled time-series of tailnet size (total / online / users),
+ *                 recorded on dashboard load to chart coverage over time
  *
  * The Drizzle table definitions below are the typed query surface; {@link SCHEMA_DDL}
  * is the matching idempotent DDL the client runs on first import to create the
  * tables. Keep the two in lock-step when changing columns.
  *
  * Exposed surface:
- *   tables   auditLog, appUser, session
+ *   tables   auditLog, appUser, session, appSettings, snapshots
  *   types    AuditEntry / NewAuditEntry, AppUser / NewAppUser,
- *            SessionRecord / NewSessionRecord, AuditDetail
+ *            SessionRecord / NewSessionRecord, AppSetting / NewAppSetting,
+ *            Snapshot / NewSnapshot, AuditDetail
  *   ddl      SCHEMA_DDL
  */
 
@@ -88,12 +94,53 @@ export const session = sqliteTable("session", {
   expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
 });
 
+/**
+ * In-app configuration store: one row per setting `key` (e.g. `headscale.url`).
+ * Read and written through `@/lib/config`, which layers these over the env
+ * bootstrap so the whole connection can be set from the UI. Secret values (the
+ * Headscale API key, the OIDC client secret) are stored with an encoding prefix
+ * (see `@/lib/config`); everything else is stored verbatim.
+ */
+export const appSettings = sqliteTable("app_settings", {
+  /** Namespaced setting key, e.g. "headscale.url" or "oidc.issuer". */
+  key: text("key").primaryKey(),
+  /** Raw stored value (secrets are already encoded by the config layer). */
+  value: text("value").notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+/**
+ * A tailnet size sample. One row is appended on dashboard load, throttled to at
+ * most one every few minutes (see `@/lib/db/snapshots`), giving a lightweight
+ * history to chart coverage over time. No foreign keys: it is standalone
+ * telemetry about Headscale, not about any Headtower account.
+ */
+export const snapshots = sqliteTable("snapshot", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  /** When the sample was taken (epoch ms on disk, `Date` in TypeScript). */
+  ts: integer("ts", { mode: "timestamp_ms" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  /** Total devices enrolled at sample time. */
+  total: integer("total").notNull(),
+  /** Devices online at sample time. */
+  online: integer("online").notNull(),
+  /** Tailnet users at sample time. */
+  users: integer("users").notNull(),
+});
+
 export type AuditEntry = typeof auditLog.$inferSelect;
 export type NewAuditEntry = typeof auditLog.$inferInsert;
 export type AppUser = typeof appUser.$inferSelect;
 export type NewAppUser = typeof appUser.$inferInsert;
 export type SessionRecord = typeof session.$inferSelect;
 export type NewSessionRecord = typeof session.$inferInsert;
+export type AppSetting = typeof appSettings.$inferSelect;
+export type NewAppSetting = typeof appSettings.$inferInsert;
+export type Snapshot = typeof snapshots.$inferSelect;
+export type NewSnapshot = typeof snapshots.$inferInsert;
 
 /**
  * Idempotent DDL run once per process on import (see ./client). Mirrors the
@@ -135,4 +182,19 @@ CREATE TABLE IF NOT EXISTS session (
 );
 CREATE INDEX IF NOT EXISTS idx_session_user_id ON session (user_id);
 CREATE INDEX IF NOT EXISTS idx_session_expires_at ON session (expires_at);
+
+CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS snapshot (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts INTEGER NOT NULL,
+  total INTEGER NOT NULL,
+  online INTEGER NOT NULL,
+  users INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_snapshot_ts ON snapshot (ts);
 `;
