@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { BeaconMark } from "@/components/beacon-mark";
 import { Button } from "@/components/ui/button";
 import { getSession } from "@/lib/auth";
-import { isOidcEnabled } from "@/lib/auth/oidc";
+import { listLoginProviders } from "@/lib/auth/oidc";
 import { startLogin } from "./actions";
 
 // Sign-in reads the live session + per-request params; never prerender it.
@@ -30,7 +30,7 @@ export default async function LoginPage({
   const session = await getSession();
   if (session) redirect("/");
 
-  const oidc = isOidcEnabled();
+  const providers = listLoginProviders();
   const errorCode = first(error);
 
   return (
@@ -51,18 +51,25 @@ export default async function LoginPage({
           </div>
 
           <div className="mt-7">
-            {oidc ? (
-              <form action={startLogin}>
-                <input type="hidden" name="next" value={first(next) ?? ""} />
-                <Button
-                  type="submit"
-                  variant="solid"
-                  size="md"
-                  className="w-full"
-                >
-                  Sign in with single sign-on
-                </Button>
-              </form>
+            {providers.length > 0 ? (
+              <div className="flex flex-col gap-2.5">
+                {providers.map((provider, index) => (
+                  <form key={provider.id} action={startLogin}>
+                    <input type="hidden" name="next" value={first(next) ?? ""} />
+                    <input type="hidden" name="provider" value={provider.id} />
+                    <Button
+                      type="submit"
+                      variant={index === 0 ? "solid" : "outline"}
+                      size="md"
+                      className="w-full"
+                    >
+                      {providers.length > 1
+                        ? `Continue with ${provider.name}`
+                        : "Sign in with single sign-on"}
+                    </Button>
+                  </form>
+                ))}
+              </div>
             ) : (
               <div className="text-center">
                 <p className="text-sm text-ink-muted">

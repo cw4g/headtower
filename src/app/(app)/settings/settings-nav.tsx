@@ -10,6 +10,7 @@ import {
   KeySquare,
   PlugZap,
   ShieldCheck,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -33,6 +34,12 @@ const ITEMS: SettingsNavItem[] = [
     href: "/settings/authentication",
     icon: ShieldCheck,
     description: "Sign-in + OIDC",
+  },
+  {
+    label: "Identity providers",
+    href: "/settings/identity-providers",
+    icon: Users,
+    description: "Additional sign-in options",
   },
   {
     label: "Pre-auth keys",

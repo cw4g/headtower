@@ -2,26 +2,30 @@
  * Headtower local database schema (server-only).
  *
  * Headscale stays the source of truth for tailnet data; this database holds
- * ONLY Headtower's own state. Five tables:
+ * ONLY Headtower's own state. Six tables:
  *
- *   audit_log     append-only operator action trail (one row per mutation)
- *   app_user      Headtower accounts (OIDC `sub` -> role), distinct from tailnet users
- *   session       server-side login sessions referencing app_user
- *   app_settings  key/value store for the in-app configuration (see @/lib/config):
- *                 the Headscale connection + OIDC provider, editable at runtime and
- *                 overriding the env bootstrap. Secret values are stored encoded.
- *   snapshot      throttled time-series of tailnet size (total / online / users),
- *                 recorded on dashboard load to chart coverage over time
+ *   audit_log      append-only operator action trail (one row per mutation)
+ *   app_user       Headtower accounts (OIDC `sub` -> role), distinct from tailnet users
+ *   session        server-side login sessions referencing app_user
+ *   app_settings   key/value store for the in-app configuration (see @/lib/config):
+ *                  the Headscale connection + the legacy single OIDC provider,
+ *                  editable at runtime and overriding the env bootstrap. Secret
+ *                  values are stored encoded.
+ *   oidc_provider  additional OIDC identity providers beyond the legacy one above
+ *                  (see @/lib/auth/oidc-providers) - any number can be enabled
+ *                  at once, each rendered as its own button on the login page.
+ *   snapshot       throttled time-series of tailnet size (total / online / users),
+ *                  recorded on dashboard load to chart coverage over time
  *
  * The Drizzle table definitions below are the typed query surface; {@link SCHEMA_DDL}
  * is the matching idempotent DDL the client runs on first import to create the
  * tables. Keep the two in lock-step when changing columns.
  *
  * Exposed surface:
- *   tables   auditLog, appUser, session, appSettings, snapshots
+ *   tables   auditLog, appUser, session, appSettings, oidcProvider, snapshots
  *   types    AuditEntry / NewAuditEntry, AppUser / NewAppUser,
  *            SessionRecord / NewSessionRecord, AppSetting / NewAppSetting,
- *            Snapshot / NewSnapshot, AuditDetail
+ *            OidcProviderRow / NewOidcProviderRow, Snapshot / NewSnapshot, AuditDetail
  *   ddl      SCHEMA_DDL
  */
 
@@ -57,6 +61,32 @@ export const auditLog = sqliteTable("audit_log", {
   detail: text("detail", { mode: "json" }).$type<AuditDetail>(),
   /** Originating client IP, when known. */
   ip: text("ip"),
+});
+
+/**
+ * An additional OIDC identity provider, beyond the single legacy provider
+ * configured via `app_settings` (`oidc.issuer` / `oidc.client_id` /
+ * `oidc.client_secret`, still supported unchanged for backward compatibility).
+ * The login page renders one button per enabled row here, plus the legacy
+ * provider when it is configured - any number of providers can be live at
+ * once. `clientSecret` is stored encoded, same scheme as other secrets (see
+ * `@/lib/config`'s `encodeSecret`/`decodeSecret`).
+ */
+export const oidcProvider = sqliteTable("oidc_provider", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  /** Shown on the login button, e.g. "Google" -> "Continue with Google". */
+  name: text("name").notNull(),
+  issuer: text("issuer").notNull(),
+  clientId: text("client_id").notNull(),
+  clientSecret: text("client_secret").notNull(),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  /** Login-page display order, ascending. */
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: integer("created_at", { mode: "timestamp_ms" })
+    .notNull()
+    .$defaultFn(() => new Date()),
 });
 
 /**
@@ -139,6 +169,8 @@ export type SessionRecord = typeof session.$inferSelect;
 export type NewSessionRecord = typeof session.$inferInsert;
 export type AppSetting = typeof appSettings.$inferSelect;
 export type NewAppSetting = typeof appSettings.$inferInsert;
+export type OidcProviderRow = typeof oidcProvider.$inferSelect;
+export type NewOidcProviderRow = typeof oidcProvider.$inferInsert;
 export type Snapshot = typeof snapshots.$inferSelect;
 export type NewSnapshot = typeof snapshots.$inferInsert;
 
@@ -162,6 +194,18 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_ts ON audit_log (ts);
 CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log (action);
 CREATE INDEX IF NOT EXISTS idx_audit_log_actor ON audit_log (actor);
 CREATE INDEX IF NOT EXISTS idx_audit_log_target_type ON audit_log (target_type);
+
+CREATE TABLE IF NOT EXISTS oidc_provider (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  issuer TEXT NOT NULL,
+  client_id TEXT NOT NULL,
+  client_secret TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_oidc_provider_sort_order ON oidc_provider (sort_order);
 
 CREATE TABLE IF NOT EXISTS app_user (
   id TEXT PRIMARY KEY,
