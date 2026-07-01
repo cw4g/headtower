@@ -33,6 +33,7 @@ const VERB_LABELS: Record<string, string> = {
   register: "Registered",
   accept: "Accepted",
   reject: "Rejected",
+  connect: "Connected",
 };
 
 /**

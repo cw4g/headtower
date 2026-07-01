@@ -28,6 +28,29 @@ services:
       - HEADTOWER_SESSION_SECRET=${HEADTOWER_SESSION_SECRET:-}
       # Optional: encrypts secrets stored in the DB at rest.
       - HEADTOWER_SECRET=${HEADTOWER_SECRET:-}
+      # Optional agent (device metadata + browser SSH). URL is reachable
+      # in-cluster; the SSH secret must match the agent service's.
+      - HEADTOWER_AGENT_URL=${HEADTOWER_AGENT_URL:-}
+      - HEADTOWER_AGENT_SSH_SECRET=${HEADTOWER_AGENT_SSH_SECRET:-}
+
+  # Optional sidecar: joins the tailnet (tsnet) to report device OS/version/
+  # endpoints the Headscale API lacks, and to proxy browser SSH to nodes. Enable
+  # by setting HEADTOWER_AGENT_AUTHKEY (a Headscale pre-auth key) in .env.
+  agent:
+    build: ./agent
+    container_name: headtower-agent
+    restart: unless-stopped
+    ports:
+      # Browser-SSH websocket target (nginx maps /admin/agent/ -> here).
+      - "127.0.0.1:8410:8410"
+    volumes:
+      - headtower-agent-state:/state
+    environment:
+      - HEADTOWER_AGENT_LOGIN_SERVER=${HEADTOWER_AGENT_LOGIN_SERVER:-}
+      - HEADTOWER_AGENT_AUTHKEY=${HEADTOWER_AGENT_AUTHKEY:-}
+      - HEADTOWER_AGENT_HOSTNAME=${HEADTOWER_AGENT_HOSTNAME:-headtower-agent}
+      - HEADTOWER_AGENT_SSH_SECRET=${HEADTOWER_AGENT_SSH_SECRET:-}
 
 volumes:
   headtower-data:
+  headtower-agent-state:

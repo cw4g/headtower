@@ -42,6 +42,7 @@ import { StatusDot } from "@/components/ui/status-dot";
 import { CopyButton } from "@/components/ui/copy-button";
 import { ConnectionError } from "@/components/machines/connection-error";
 import { NodeActions } from "@/components/machines/node-actions";
+import { TerminalAction } from "@/components/machines/terminal-action";
 import { humanizeAction, summarizeDetail } from "../../audit/format";
 import { cn } from "@/lib/cn";
 
@@ -72,10 +73,12 @@ export default async function MachineDetailPage({
   // A stable const so the closures below narrow cleanly to a non-null Node.
   const found = node;
 
-  // Enrichment and gating resolve concurrently: role (for the Actions panel),
-  // the optional agent sidecar (device facts), and this node's audit history.
-  const [canManage, agent, nodeAudit] = await Promise.all([
+  // Enrichment and gating resolve concurrently: role (for the Actions panel
+  // and the Terminal action), the optional agent sidecar (device facts), and
+  // this node's audit history.
+  const [canManage, canSsh, agent, nodeAudit] = await Promise.all([
     sessionCan("machines.write"),
+    sessionCan("ssh.connect"),
     found
       ? getAgentPeers().then((peers) =>
           peers.lookup(found.name, found.ipAddresses ?? []),
@@ -100,6 +103,7 @@ export default async function MachineDetailPage({
         <MachineDetail
           node={found}
           canManage={canManage}
+          canSsh={canSsh}
           agent={agent}
           audit={nodeAudit}
         />
@@ -126,11 +130,13 @@ async function loadNodeAudit(nodeId: string): Promise<AuditEntry[]> {
 function MachineDetail({
   node,
   canManage,
+  canSsh,
   agent,
   audit,
 }: {
   node: Node;
   canManage: boolean;
+  canSsh: boolean;
   agent: NodeAgentInfo | null;
   audit: AuditEntry[];
 }) {
@@ -138,10 +144,17 @@ function MachineDetail({
   const view = toNodeView(node, now, agent);
   const dot = nodeDot(view);
   const activity = activityByDay(audit, now);
+  const sshHost = view.ipv4 || view.ipv6 || view.hostname || null;
 
   return (
     <div className="flex flex-col gap-6">
-      <DetailHeader view={view} dot={dot} now={now} />
+      <DetailHeader
+        view={view}
+        dot={dot}
+        now={now}
+        canSsh={canSsh}
+        sshHost={sshHost}
+      />
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="flex flex-col gap-4 lg:col-span-2">
@@ -180,10 +193,14 @@ function DetailHeader({
   view,
   dot,
   now,
+  canSsh,
+  sshHost,
 }: {
   view: NodeView;
   dot: { status: "online" | "warn" | "critical" | "idle"; label: string };
   now: number;
+  canSsh: boolean;
+  sshHost: string | null;
 }) {
   return (
     <div className="flex flex-col gap-4 rounded-card border border-line bg-surface p-5">
@@ -209,7 +226,10 @@ function DetailHeader({
           </div>
         </div>
 
-        <span className="data text-xs text-ink-faint">#{view.id}</span>
+        <div className="flex items-center gap-3">
+          {canSsh && sshHost && <TerminalAction host={sshHost} name={view.name} />}
+          <span className="data text-xs text-ink-faint">#{view.id}</span>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5">

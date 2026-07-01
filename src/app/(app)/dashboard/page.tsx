@@ -369,10 +369,16 @@ export default async function DashboardPage() {
   const onlineTrend = history.map((h) => h.online);
   const totalTrend = history.map((h) => h.total);
 
+  // Agent-reported OS, keyed by node id, so the coverage view can group by
+  // platform without reshaping the raw Node list it's otherwise built from.
+  const agentOsById = new Map<string, string | undefined>();
+  for (const v of views) agentOsById.set(v.id, v.agent?.os ?? undefined);
+
   const points: CoveragePoint[] = nodes.map((n) => ({
     id: n.id,
     label: nodeName(n),
     online: n.online,
+    os: agentOsById.get(n.id),
   }));
 
   const platforms = platformDistribution(views);
@@ -427,14 +433,7 @@ export default async function DashboardPage() {
           </div>
         </div>
 
-        <div className="relative">
-          <CoverageView points={points} />
-          {total === 0 && (
-            <p className="data pointer-events-none absolute inset-x-0 bottom-5 text-center text-[11px] uppercase tracking-[0.14em] text-ink-faint">
-              Awaiting first device
-            </p>
-          )}
-        </div>
+        <CoverageView points={points} />
       </Surface>
 
       {/* Compact readout strip — instrument figures, not stat cards. */}

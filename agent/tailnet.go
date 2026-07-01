@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"net"
 	"net/netip"
 	"sort"
 	"strings"
@@ -64,6 +65,12 @@ func (t *tailnet) Start(ctx context.Context) error {
 // Addresses returns this node's tailnet IP addresses.
 func (t *tailnet) Addresses() []string {
 	return t.addr
+}
+
+// Dial opens a connection to address over the tailnet, so traffic is routed
+// through the mesh rather than the host network. Used by the /ssh bridge.
+func (t *tailnet) Dial(ctx context.Context, network, address string) (net.Conn, error) {
+	return t.srv.Dial(ctx, network, address)
 }
 
 // Close shuts the node down and deregisters it (if ephemeral).

@@ -19,9 +19,11 @@ This is original work. It shares no code with any other project.
 
 - Joins a Headscale/Tailscale tailnet using a pre-auth key.
 - Reads peer state from the in-process Tailscale local API.
-- Serves two endpoints over plain HTTP:
+- Serves these endpoints:
   - `GET /healthz` - liveness probe.
   - `GET /peers` - the tailnet peers this node can see.
+  - `GET /ssh` - a websocket that bridges a browser terminal to a
+    Tailscale-SSH shell on a tailnet node (opt-in; token-authenticated).
 
 ## Configuration
 
@@ -36,6 +38,7 @@ All configuration is via environment variables.
 | `HEADTOWER_AGENT_STATE_DIR`    | no       | OS config dir      | Directory for tsnet node state. |
 | `HEADTOWER_AGENT_EPHEMERAL`    | no       | `false`            | Register as an ephemeral node (auto-removed when it goes offline). |
 | `HEADTOWER_AGENT_VERBOSE`      | no       | `false`            | Emit verbose tsnet backend logs for debugging. |
+| `HEADTOWER_AGENT_SSH_SECRET`   | no       | -                  | Shared HMAC secret that signs `/ssh` access tokens. **Unset disables `/ssh` (returns 503).** Set the same value in the Headtower app. |
 
 ## Build
 
@@ -126,9 +129,103 @@ best-effort and may be empty for some peers.
 | `endpoints`        | direct `ip:port` endpoints      | |
 | `relay`            | DERP region in use              | |
 
+### `GET /ssh` (websocket)
+
+Bridges a browser terminal to a **Tailscale-SSH** shell on a tailnet node. The
+agent dials `host:22` **over the tailnet** (via tsnet), completes an SSH
+handshake using the `none` auth method - the tailnet identity is the credential -
+requests an `xterm-256color` PTY (initial 80x24), starts a shell, and shuttles
+bytes between the PTY and the websocket.
+
+This endpoint is **opt-in**: if `HEADTOWER_AGENT_SSH_SECRET` is unset the agent
+returns `503 Service Unavailable` and never dials anything.
+
+Target nodes must run Tailscale SSH (`tailscale up --ssh`) and the tailnet's SSH
+ACL must permit **this agent's tailnet identity** to SSH to them as the requested
+user. Host keys are intentionally ignored: the tailnet mesh is the trust
+boundary, not SSH host-key pinning.
+
+#### Access token
+
+Auth is a signed token passed as the `?token=` query parameter on the upgrade
+request. It is HMAC-SHA256 over a small JSON payload, shared with the app via
+`HEADTOWER_AGENT_SSH_SECRET`.
+
+```
+token = base64url(payloadJSON) + "." + base64url(HMAC_SHA256(payloadJSON, secret))
+```
+
+- Both segments use **unpadded** base64url (Go `base64.RawURLEncoding`, RFC 4648
+  §5, no `=` padding).
+- `payloadJSON` is the raw UTF-8 JSON bytes below. The HMAC is computed over
+  **exactly those bytes** (the ones that were base64url-encoded into the first
+  segment), keyed by the shared secret.
+
+```json
+{ "host": "<node hostname or tailnet ip>", "user": "<ssh user>", "exp": 1893456000 }
+```
+
+| Field  | Type          | Meaning |
+| ------ | ------------- | ------- |
+| `host` | string        | Node hostname (MagicDNS) or tailnet IP to dial on port 22. |
+| `user` | string        | SSH user to present to the target. |
+| `exp`  | number (int)  | Expiry as Unix seconds. |
+
+Validation on the agent: split on the single `.`, base64url-decode both parts,
+recompute the HMAC over the decoded payload bytes and compare in **constant
+time** (`hmac.Equal`), then reject if the signature mismatches, `host`/`user` are
+empty, or `exp` is in the past. Any failure returns `401`.
+
+Reference (Node/TypeScript) for minting a token in the app:
+
+```ts
+import { createHmac } from "node:crypto";
+
+function b64url(buf: Buffer) {
+  return buf.toString("base64url"); // unpadded base64url
+}
+
+export function mintSshToken(secret: string, host: string, user: string, ttlSeconds = 60) {
+  const payload = JSON.stringify({ host, user, exp: Math.floor(Date.now() / 1000) + ttlSeconds });
+  const payloadBytes = Buffer.from(payload, "utf8");
+  const sig = createHmac("sha256", secret).update(payloadBytes).digest();
+  return `${b64url(payloadBytes)}.${b64url(sig)}`;
+}
+```
+
+#### Websocket message protocol
+
+Once upgraded, frames are exchanged as follows. **Frame type matters**: binary
+carries raw terminal bytes, text carries JSON control/status messages.
+
+Client -> agent:
+
+| Frame type | Payload | Meaning |
+| ---------- | ------- | ------- |
+| binary     | raw bytes | stdin - written verbatim to the shell's stdin. |
+| text       | `{"type":"resize","cols":N,"rows":N}` | resize the PTY (`SIGWINCH`). `cols`/`rows` must be positive; other/unknown text frames are ignored. |
+
+Agent -> client:
+
+| Frame type | Payload | Meaning |
+| ---------- | ------- | ------- |
+| binary     | raw bytes | shell stdout/stderr, streamed as produced. |
+| text       | `{"type":"error","message":"..."}` | a failure (dial/handshake/session error); the socket then closes. |
+| text       | `{"type":"exit","code":N}` | the shell exited with status `N`; the socket then closes cleanly. |
+
+The socket closes cleanly when either side ends: if the remote shell exits the
+agent sends `exit` (or `error`) then closes; if the client closes the socket the
+agent tears the SSH session down.
+
 ## Notes
 
 - The agent serves plain HTTP on `HEADTOWER_AGENT_ADDR`; run it where only
   Headtower can reach it (loopback, a private interface, or behind the tailnet).
+  This matters more once `/ssh` is enabled: anyone able to reach the endpoint
+  **and** holding the shared secret can open a shell on nodes the agent may SSH
+  to. Keep `HEADTOWER_AGENT_SSH_SECRET` high-entropy and mint short-lived tokens.
+- The `/ssh` bridge only works against nodes with Tailscale SSH enabled and an
+  SSH ACL that permits this agent's identity; it does not use SSH keys or
+  passwords.
 - An ephemeral auth key plus `HEADTOWER_AGENT_EPHEMERAL=true` keeps the tailnet
   device list clean across restarts.

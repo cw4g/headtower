@@ -64,6 +64,7 @@ export const CAPABILITIES = [
   "settings.write",
   "audit.read",
   "members.manage",
+  "ssh.connect",
 ] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 
@@ -88,6 +89,7 @@ const CAPABILITY_MAP: Record<Role, ReadonlySet<Capability>> = {
     "machines.write",
     "routes.write",
     "keys.write",
+    "ssh.connect",
   ]),
   viewer: new Set<Capability>(READ_ONLY),
 };

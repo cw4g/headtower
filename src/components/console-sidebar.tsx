@@ -120,9 +120,9 @@ export function ConsoleSidebar({
           aria-expanded={!collapsed}
           className="flex items-center gap-2.5 rounded-control p-1 transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beacon-500/40"
         >
-          <BeaconMark className="h-8 w-8 shrink-0" />
+          <BeaconMark className="h-7 w-7 shrink-0" />
           {!collapsed && (
-            <span className="hidden text-[15px] font-semibold tracking-tight text-ink md:inline">
+            <span className="hidden text-[19px] font-semibold tracking-tight text-ink md:inline">
               head<span className="text-ink-muted">tower</span>
             </span>
           )}

@@ -8,10 +8,12 @@ import (
 )
 
 // newRouter wires the JSON HTTP API. Patterns use Go's method-aware ServeMux.
-func newRouter(t *tailnet) http.Handler {
+func newRouter(t *tailnet, cfg config) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealthz)
 	mux.HandleFunc("GET /peers", handlePeers(t))
+	// /ssh is opt-in: with no secret configured the handler refuses with 503.
+	mux.HandleFunc("GET /ssh", handleSSH(t, cfg.SSHSecret))
 	return logRequests(mux)
 }
 
