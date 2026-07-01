@@ -1,6 +1,6 @@
 ---
 title: Dashboard
-description: The signature tailnet coverage view - the control tower at center, nodes on range rings, signal strength standing in for connectivity.
+description: The signature tailnet coverage view - an OS-grouped connection mesh, plus graphs, breakdowns, and a recent-activity feed.
 ---
 
 import { Callout } from "nextra/components";
@@ -11,21 +11,23 @@ The Dashboard answers one question fast: **is the tailnet healthy right now?** I
 is deliberately not a wall of stat cards. Its centerpiece is the **coverage
 view** - the one bold element in an otherwise quiet console.
 
+![Dashboard](/screenshots/dashboard.png)
+
 ## The coverage view
 
-A schematic radar of your tailnet. The **control tower** - the beacon glyph -
-sits dead center, broadcasting. Every node is a point arranged on concentric
-**range rings** around it:
+A schematic **OS-grouped connection mesh**, not a radar. A control-tower spine
+runs down the left edge, and every operating system present on the tailnet gets
+its own horizontal lane branching off it:
 
-- **Online nodes** sit on the inner rings, each with a faint signal line back to
-  the tower - within coverage.
-- **Offline nodes** drift to the outer ring, dim and without a signal line - weak
-  or no signal.
+- Each device on a lane is drawn as its **actual OS icon** - a real computer,
+  phone, or terminal glyph, not an abstract dot - so the fleet reads like a
+  patch panel: scan lanes top to bottom to see what's actually out there.
+- A small corner light on each device marks it online (filled, pulsing) or
+  offline (dim), and online devices wire back to the spine with a solid beacon
+  line; offline ones with a faint dashed one.
 
 It is pure, server-rendered geometry driven by the design tokens, so it stays
-crisp and flips cleanly between dark and light. The metaphor does real work: you
-read connectivity as distance and signal strength, not as a number you have to
-interpret.
+crisp and flips cleanly between dark and light.
 
 <Callout type="info">
   The coverage view is the deliberate exception to Headtower's restraint. It is
@@ -43,6 +45,11 @@ checks on a glance:
 - **routes awaiting approval**,
 - recent activity worth noticing.
 
-These are summaries, not dashboards-for-their-own-sake - each one is a doorway
-into the view where you would act on it. Nothing here is decorative; if it is on
-the Dashboard, it is something you would change your behavior over.
+## Widgets
+
+Below the coverage view: an online-over-time graph, OS and client-version
+breakdowns, an agent health widget with its own enable/disable toggle, and a
+recent-activity feed pulled straight from the audit log. These are summaries,
+not dashboards-for-their-own-sake - each one is a doorway into the view where
+you would act on it. Nothing here is decorative; if it is on the Dashboard, it
+is something you would change your behavior over.

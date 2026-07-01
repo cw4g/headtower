@@ -16,6 +16,8 @@ mouse-driven navigation.
 Press <kbd>Cmd</kbd>+<kbd>K</kbd> (or <kbd>Ctrl</kbd>+<kbd>K</kbd>) from anywhere
 in the console. Start typing and the palette narrows to match.
 
+![Command palette](/screenshots/command-palette.png)
+
 <Callout type="info">
   The palette is always one keystroke away. The intent is that you can run the
   whole console without reaching for the mouse - jump, filter, act, done.
@@ -23,10 +25,15 @@ in the console. Start typing and the palette narrows to match.
 
 ## What you can do from it
 
-- **Jump to a view** - Machines, Dashboard, Access, Routes, Settings - by name.
-- **Find a node** - type part of a name, address, or tag and go straight to it.
-- **Run an action** - the common operations surface as commands, so you trigger
-  them by typing instead of hunting through menus.
+Results are grouped, top to bottom:
+
+- **Quick actions** - add a device, create a pre-auth key - the things you'd
+  otherwise hunt through a page for.
+- **Navigate** - every view, by name.
+- **Settings** - every settings section, by name.
+- **Devices** - a live search over the current tailnet, matched by name,
+  hostname, or tag, each result showing its online status.
+- **Recent activity** - the last few audit-log entries, jump straight to one.
 
 ## Why it leads
 

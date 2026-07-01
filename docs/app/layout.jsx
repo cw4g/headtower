@@ -14,15 +14,80 @@ const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
 });
 
+const SITE_URL = "https://headtower.niheshr.com";
+const DESCRIPTION =
+  "Documentation for Headtower, an operator's console for your Headscale tailnet.";
+
 export const metadata = {
+  metadataBase: new URL(SITE_URL),
   title: {
     default: "Headtower docs",
     template: "%s - Headtower",
   },
-  description:
-    "Documentation for Headtower, an operator's console for your Headscale tailnet.",
+  description: DESCRIPTION,
   applicationName: "Headtower",
+  keywords: [
+    "Headscale",
+    "Headscale UI",
+    "Headscale admin",
+    "Headscale web UI",
+    "Headscale dashboard",
+    "Headscale management",
+    "Headscale control panel",
+    "Tailscale",
+    "tailnet",
+    "self-hosted VPN",
+    "WireGuard",
+    "mesh VPN",
+    "admin console",
+    "self-hosted",
+    "open source",
+  ],
+  openGraph: {
+    type: "website",
+    url: SITE_URL,
+    siteName: "Headtower",
+    title: "Headtower docs",
+    description: DESCRIPTION,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Headtower docs",
+    description: DESCRIPTION,
+  },
 };
+
+/**
+ * Structured data: SoftwareApplication (so a search result can render price/
+ * platform/license richly) plus WebSite (one of the real signals Google's
+ * algorithm weighs when it decides, on its own timeline, whether to show a
+ * sitelinks panel for a site - there's no way to declare sitelinks directly;
+ * this plus a clean sitemap.xml/robots.txt and consistent per-page titles are
+ * the actual ingredients, not a guarantee). No SearchAction: the docs' search
+ * (Pagefind) runs entirely client-side with no queryable URL to point one at,
+ * and a fake target would be worse than none.
+ */
+const JSON_LD = [
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: "Headtower",
+    description: DESCRIPTION,
+    applicationCategory: "SystemAdministrationApplication",
+    operatingSystem: "Linux, macOS, Windows (self-hosted via Docker)",
+    url: SITE_URL,
+    image: `${SITE_URL}/opengraph-image`,
+    license: "https://www.gnu.org/licenses/agpl-3.0.html",
+    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: "Headtower",
+    description: DESCRIPTION,
+    url: SITE_URL,
+  },
+];
 
 const logo = (
   <span className="ht-logo">
@@ -62,6 +127,11 @@ export default async function RootLayout({ children }) {
         backgroundColor={{ dark: "#0e1117", light: "#fbfaf8" }}
       >
         <meta name="theme-color" content="#0e1117" />
+        <script
+          type="application/ld+json"
+          // eslint-disable-next-line react/no-danger -- static, hand-authored JSON, no user input.
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }}
+        />
       </Head>
       <body>
         <Layout

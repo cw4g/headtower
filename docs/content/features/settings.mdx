@@ -1,48 +1,73 @@
 ---
 title: Settings
-description: Pre-auth keys, API keys, diagnostics, and the operational dials you touch rarely but need to trust.
+description: Connection, identity providers, members, pre-auth keys, the agent, and the operational dials you touch rarely but need to trust.
 ---
 
 import { Callout } from "nextra/components";
 
 # Settings
 
-Settings holds the things you touch rarely but need to trust completely - the
-keys that let devices and tooling onto the network, and the diagnostics that tell
-you Headtower and Headscale agree.
+Settings holds the things you touch rarely but need to trust completely. It's
+grouped into three categories - **Identity** (how the console connects and who
+can sign in), **Access** (who's in it and what they can enrol), and **System**
+(diagnostics, the optional agent, backups).
 
-## Pre-auth keys
+## Identity
+
+**Connection** is where Headtower's own Headscale URL and API key live -
+usually set once from Compose and rarely touched again.
+
+![Connection](/screenshots/settings-conn.png)
+
+**Authentication** is the on/off switch for sign-in: operator mode (no
+sign-in) or single sign-on. **Identity providers** is where the providers
+themselves live - any number of OIDC providers can be enabled at once, each
+its own button on the login page.
+
+![Identity providers](/screenshots/settings-ident-prov.png)
+
+## Access
+
+**Members** lists every account that can sign in and the role it holds -
+owner, admin, operator, or viewer - with protection against locking out the
+last owner.
+
+![Members](/screenshots/settings-mems.png)
 
 **Pre-auth keys** let a device join the tailnet without an interactive login -
-the basis for automated and headless enrollment. Headtower lets you:
+the basis for automated and headless enrollment. Create keys (reusable or
+single-use, ephemeral or persistent, pre-tagged), see each key's state and
+expiry at a glance, and revoke a key the moment it should no longer enrol
+anything.
 
-- **create** keys, choosing whether they are reusable or single-use, ephemeral or
-  persistent, and pre-tagged,
-- see each key's **state and expiry** at a glance,
-- **revoke** a key the moment it should no longer enroll anything.
+![Pre-auth keys](/screenshots/settings-pre-auth-keys.png)
 
 <Callout type="warning">
   A pre-auth key is a credential to join your network. Prefer short-lived,
   single-use, tagged keys, and revoke anything you are unsure about.
 </Callout>
 
-## API keys
-
 **API keys** are how tooling - including Headtower itself - authenticates to
-Headscale's API. The Settings view lists keys with their expiry so nothing
-outlives its usefulness unnoticed, and supports rotating them on a schedule you
-control. Secrets are shown once, at creation, and never again.
+Headscale's API. Secrets are shown once, at creation, and never again.
 
-## Diagnostics
+## System
 
-The diagnostics panel confirms Headtower can reach Headscale and reports what it
-found - the control plane it is pointed at, the version it is talking to, and any
-mismatch worth knowing about. When something is off, this is the first place to
-look: it states the problem plainly rather than failing in the background.
+**Diagnostics** confirms Headtower can reach Headscale and reports what it
+found - the control plane it's pointed at, the version it's talking to, and
+any mismatch worth knowing about.
+
+**Agent** controls the optional Go sidecar: enable/disable, its URL, its SSH
+secret, and a live health readout.
+
+![Agent](/screenshots/settings-agent.png)
+
+**Database** exports the whole local Headtower database (accounts, sessions,
+roles, identity providers, audit log) as a single downloadable backup.
+
+![Database export](/screenshots/settings-db.png)
 
 ## Trust, not chrome
 
-Settings is intentionally quiet. There are no toggles for their own sake - every
-control here changes who or what can reach the network, or tells you whether the
-console is seeing the truth. That is exactly the kind of surface that should be
-calm and unambiguous.
+Settings is intentionally organized, not decorated. Every control here changes
+who or what can reach the network, or tells you whether the console is seeing
+the truth - exactly the kind of surface that should be calm and unambiguous.

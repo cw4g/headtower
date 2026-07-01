@@ -134,21 +134,19 @@ function BranchTick({ active }: { active: boolean }) {
   );
 }
 
-/** One device: its wire back into the lane, a status dot, and a truncated mono label. */
-function NodeMarker({ point }: { point: CoveragePoint }) {
+/**
+ * One device: its wire back into the lane, then the device itself - the
+ * lane's OS icon (a real computer/phone shape, not an abstract dot), with a
+ * small corner status light for online/offline, and a truncated mono label.
+ */
+function NodeMarker({ point, icon: Icon }: { point: CoveragePoint; icon: LucideIcon }) {
   const status = point.online ? "online" : "offline";
   return (
     <span
       title={`${point.label} · ${status}`}
       className="group inline-flex min-w-0 items-center gap-1.5"
     >
-      <svg
-        width={20}
-        height={14}
-        viewBox="0 0 20 14"
-        className="shrink-0 overflow-visible"
-      >
-        <title>{`${point.label} · ${status}`}</title>
+      <svg width={12} height={14} viewBox="0 0 12 14" className="shrink-0 overflow-visible">
         <line
           x1={0}
           y1={7}
@@ -159,28 +157,23 @@ function NodeMarker({ point }: { point: CoveragePoint }) {
           strokeOpacity={point.online ? 0.75 : 1}
           strokeDasharray={point.online ? undefined : "2 2.5"}
         />
-        {point.online ? (
-          <>
-            <circle
-              cx={14}
-              cy={7}
-              r={4}
-              className="fill-online-500 animate-pulse"
-              fillOpacity={0.22}
-            />
-            <circle cx={14} cy={7} r={2.25} className="fill-online-500" />
-          </>
-        ) : (
-          <circle
-            cx={14}
-            cy={7}
-            r={2.25}
-            className="fill-surface stroke-ink-faint"
-            strokeWidth={1.25}
-            strokeOpacity={0.7}
-          />
-        )}
       </svg>
+      <span className="relative inline-flex shrink-0 items-center justify-center">
+        <Icon
+          className={cn(
+            "h-3.5 w-3.5",
+            point.online ? "text-ink" : "text-ink-faint",
+          )}
+          aria-hidden
+        />
+        <span
+          className={cn(
+            "absolute -bottom-0.5 -right-1 h-[7px] w-[7px] rounded-full border border-surface",
+            point.online ? "bg-online-500 animate-pulse" : "bg-ink-faint",
+          )}
+          aria-hidden
+        />
+      </span>
       <span className="data max-w-[8rem] truncate text-xs text-ink-muted transition-colors group-hover:text-ink sm:max-w-[10rem]">
         {point.label}
       </span>
@@ -215,7 +208,7 @@ function LaneRow({ lane }: { lane: Lane }) {
       </div>
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-2 border-l border-line/70 pl-3 pt-0.5">
         {lane.nodes.map((point) => (
-          <NodeMarker key={point.id} point={point} />
+          <NodeMarker key={point.id} point={point} icon={lane.icon} />
         ))}
       </div>
     </div>

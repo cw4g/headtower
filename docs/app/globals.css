@@ -63,3 +63,96 @@ samp,
 :not(pre) > code {
   letter-spacing: -0.01em;
 }
+
+/*
+  Lightbox: every markdown image is wired through LightboxImage
+  (mdx-components.js). Thumbnail sits inline in the page; clicking it opens a
+  full-size view over a blurred, dimmed backdrop - closes on click-away or Esc.
+*/
+.ht-lightbox-thumb {
+  display: block;
+  width: 100%;
+  border-radius: 0.75rem;
+  border: 1px solid var(--ht-line);
+  cursor: zoom-in;
+  transition:
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+.ht-lightbox-thumb:hover {
+  border-color: var(--ht-beacon);
+  transform: translateY(-1px);
+}
+
+.ht-lightbox-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4vh 4vw;
+  background: rgba(10, 12, 15, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  cursor: zoom-out;
+  animation: ht-lightbox-fade 0.18s ease;
+}
+
+.ht-lightbox-full {
+  max-width: 100%;
+  max-height: 92vh;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+  animation: ht-lightbox-zoom 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.ht-lightbox-close {
+  position: fixed;
+  top: 1.25rem;
+  right: 1.5rem;
+  width: 2.25rem;
+  height: 2.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.ht-lightbox-close:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+@keyframes ht-lightbox-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes ht-lightbox-zoom {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ht-lightbox-overlay,
+  .ht-lightbox-full,
+  .ht-lightbox-thumb {
+    animation: none;
+    transition: none;
+  }
+}

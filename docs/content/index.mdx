@@ -16,6 +16,8 @@ Point it at a Headscale instance, give it an API key, and you get a fast, legibl
 surface for the work an operator actually does - watching nodes come and go,
 approving routes, shaping access, and rotating keys.
 
+![Dashboard](/screenshots/dashboard.png)
+
 <Callout type="info">
   Headtower reads and writes Headscale through its REST API. **Headscale stays
   the single source of truth** for tailnet data; Headtower only keeps a small
@@ -42,15 +44,15 @@ tabular readout so values line up like an instrument.
 
 Most control UIs land in one of two places: generic monochrome SaaS, or clean
 blue admin panels. Headtower is deliberately neither. Its identity is the
-**schematic control console** - hairline rules, a grid-aware backdrop, graphite
-ink neutrals (never pure black), and exactly one signal accent: **beacon amber**,
-the light in the tower. Status colors - emerald for online, orange for warning,
-rose for critical - are functional only, never decorative.
+**schematic control console** - hairline rules, graphite ink neutrals (never
+pure black), and exactly one signal accent: **beacon amber**, the light in the
+tower. Status colors - emerald for online, orange for warning, rose for
+critical - are functional only, never decorative.
 
-The one bold element is the **tailnet coverage view** on the dashboard: the
-control tower at center, your nodes arranged on range rings around it, signal
-strength standing in for connectivity. Everything else stays quiet so the data
-leads.
+The one bold element is the **tailnet coverage view** on the dashboard: an
+OS-grouped connection mesh, each device drawn as its real OS icon on a lane
+branching off a control-tower spine, wired back with a signal line when
+online. Everything else stays quiet so the data leads.
 
 ## Where to go next
 

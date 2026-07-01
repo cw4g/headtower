@@ -13,11 +13,15 @@ why, and change it without guessing.
 
 ## Two views of one policy
 
+![Access - structured view](/screenshots/access-control.png)
+
 - **Structured view** - the policy broken into the parts you actually think in:
   groups, tag owners, hosts, access rules, and SSH rules. Add a rule, point a
   source at a destination, scope it to ports - without hand-editing braces.
 - **Raw view** - the policy document itself, for full control and for the cases
   where you already know exactly what you want to write.
+
+![Access - raw JSON view](/screenshots/access-control-json.png)
 
 The two stay in sync, so you can reach for whichever matches the change in front
 of you and never lose the ability to drop down to the source of truth.

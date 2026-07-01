@@ -3,6 +3,7 @@ export default {
   "getting-started": "Getting started",
   concepts: "Concepts",
   features: "Features",
+  screenshots: "Screenshots",
   configuration: "Configuration",
   changelog: "Changelog",
 };
