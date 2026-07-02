@@ -41,7 +41,7 @@ export function LintPanel({ findings, ready }: LintPanelProps) {
   const expandable = ready && count > 0;
 
   return (
-    <div className="shrink-0 border-t border-line bg-surface-2/40">
+    <div className="overflow-hidden rounded-card border border-line bg-surface-2/40">
       <button
         type="button"
         disabled={!expandable}

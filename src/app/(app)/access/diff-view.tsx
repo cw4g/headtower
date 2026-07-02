@@ -114,18 +114,16 @@ export function DiffView({ before, after }: DiffViewProps) {
 
   if (before === after) {
     return (
-      <div className="grid-field flex min-h-0 flex-1 items-center justify-center p-6">
-        <EmptyState
-          icon={GitCompare}
-          title="No changes"
-          description="The editor matches the saved policy. There's nothing to review or commit."
-        />
-      </div>
+      <EmptyState
+        icon={GitCompare}
+        title="No changes"
+        description="The editor matches the saved policy. There's nothing to review or commit."
+      />
     );
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="flex flex-col overflow-hidden rounded-card border border-line bg-surface">
       <div className="flex items-center gap-2 border-b border-line bg-surface-2/40 px-4 py-2 text-[11px]">
         <span className="text-ink-faint">Saved</span>
         <span className="text-ink-faint" aria-hidden>
@@ -141,7 +139,7 @@ export function DiffView({ before, after }: DiffViewProps) {
           </Chip>
         </span>
       </div>
-      <div className="data min-h-0 flex-1 overflow-auto text-[13px] leading-[1.5rem]">
+      <div className="data overflow-x-auto text-[13px] leading-[1.5rem]">
         {rows.map((row, idx) => {
           const style = KIND_STYLE[row.kind];
           return (

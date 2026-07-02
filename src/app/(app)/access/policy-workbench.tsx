@@ -202,9 +202,10 @@ export function PolicyWorkbench({
   }
 
   return (
-    <div className="flex h-[calc(100vh-15rem)] min-h-[32rem] flex-col overflow-hidden rounded-card border border-line bg-surface">
-      {/* Console bar: tab switch + validity on the left, save state on the right. */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-surface-2/60 px-3 py-2.5">
+    <div className="flex flex-col gap-4">
+      {/* Toolbar: tab switch + validity on the left, save state on the right.
+          A normal row below the page heading, not a panel header. */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-line bg-surface-2/60 px-3 py-2.5">
         <div className="flex items-center gap-3">
           <SegmentedTabs
             options={TAB_OPTIONS}
@@ -238,7 +239,7 @@ export function PolicyWorkbench({
         </div>
       </div>
 
-      {/* Body: the active view fills the remaining height. */}
+      {/* Body: the active view flows directly in the page column. */}
       {tab === "visual" ? (
         parseError ? (
           <ParseNotice message={parseError} onEditJson={selectJson} />
@@ -262,11 +263,11 @@ export function PolicyWorkbench({
         />
       )}
 
-      {/* Advisory lint strip - only while editing (Visual / JSON). */}
+      {/* Advisory lint panel - only while editing (Visual / JSON). */}
       {showLint && <LintPanel findings={lintFindings} ready={parsedNow.ok} />}
 
-      {/* Status rail: parse / save detail, then the live counters. */}
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-line bg-surface-2/60 px-4 py-2 text-[11px]">
+      {/* Footer: a quiet closing line - parse / save detail, then the live counters. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-line/60 px-1 pt-3 text-[11px]">
         <div className="min-w-0">
           {saveError ? (
             <span className="flex items-center gap-1.5 text-critical-500">
@@ -389,7 +390,7 @@ function ParseNotice({
   onEditJson: () => void;
 }) {
   return (
-    <div className="grid-field flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+    <div className="flex flex-col items-center justify-center gap-3 rounded-card border border-dashed border-line-strong p-8 text-center">
       <span className="flex h-10 w-10 items-center justify-center rounded-card border border-warn-500/30 bg-warn-500/10 text-warn-500">
         <TriangleAlert className="h-5 w-5" aria-hidden />
       </span>

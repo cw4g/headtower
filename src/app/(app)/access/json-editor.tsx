@@ -45,7 +45,7 @@ export function JsonEditor({ value, onChange, invalid }: JsonEditorProps) {
   }
 
   return (
-    <div className="relative flex min-h-0 flex-1">
+    <div className="relative flex h-[calc(100vh-20rem)] min-h-[24rem] overflow-hidden rounded-card border border-line bg-surface">
       <div
         ref={gutterRef}
         aria-hidden

@@ -161,7 +161,7 @@ export function VisualEditor({ model, onChange }: VisualEditorProps) {
     onChange({ ...model, autoApprovers: { ...model.autoApprovers, exitNode } });
 
   return (
-    <div className="grid-field flex-1 space-y-4 overflow-y-auto p-4">
+    <div className="space-y-4">
       <GroupLabel>Access policy</GroupLabel>
 
       {/* Access rules ------------------------------------------------------ */}

@@ -73,7 +73,7 @@ export function ReachabilityTester({
   }
 
   return (
-    <div className="grid-field min-h-0 flex-1 space-y-5 overflow-y-auto p-4">
+    <div className="space-y-5">
       <datalist id={listId}>
         {suggestions.map((s) => (
           <option key={s} value={s} />
