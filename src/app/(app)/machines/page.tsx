@@ -21,7 +21,7 @@ import { ConnectionError } from "@/components/machines/connection-error";
 import {
   AddDeviceDialog,
   type UserOption,
-} from "@/components/machines/add-device-dialog";
+} from "@/components/machines/add-device-dialog-lazy";
 
 // The console reports live tailnet state; never prebuild this view.
 export const dynamic = "force-dynamic";

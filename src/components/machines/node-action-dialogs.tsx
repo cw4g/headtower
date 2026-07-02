@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { TriangleAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
+import { toast } from "@/components/ui/toast";
 import {
   Dialog,
   DialogContent,
@@ -74,7 +75,7 @@ export function NodeActionDialogs({
       >
         <DialogContent>
           {open === "tags" && (
-            <TagsForm nodeId={nodeId} tags={tags} onDone={onClose} />
+            <TagsForm nodeId={nodeId} name={name} tags={tags} onDone={onClose} />
           )}
         </DialogContent>
       </Dialog>
@@ -144,6 +145,7 @@ function RenameForm({ nodeId, name, onDone }: FormProps & { name: string }) {
     startTransition(async () => {
       const result = await renameNode(nodeId, trimmed);
       if (result.status === "success") {
+        toast(`Renamed to “${trimmed}”`);
         onDone();
       } else {
         setError(result.error ?? "Couldn't rename the machine.");
@@ -216,7 +218,12 @@ function mergeTags(...lists: string[][]): string[] {
   return out;
 }
 
-function TagsForm({ nodeId, tags, onDone }: FormProps & { tags: string[] }) {
+function TagsForm({
+  nodeId,
+  name,
+  tags,
+  onDone,
+}: FormProps & { name: string; tags: string[] }) {
   const [current, setCurrent] = React.useState<string[]>(tags);
   const [draft, setDraft] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
@@ -242,6 +249,7 @@ function TagsForm({ nodeId, tags, onDone }: FormProps & { tags: string[] }) {
     startTransition(async () => {
       const result = await setNodeTags(nodeId, next);
       if (result.status === "success") {
+        toast(`Tags updated for “${name}”`);
         onDone();
       } else {
         setError(result.error ?? "Couldn't update tags.");
@@ -349,6 +357,7 @@ function ExpireForm({ nodeId, name, onDone }: FormProps & { name: string }) {
     startTransition(async () => {
       const result = await expireNode(nodeId);
       if (result.status === "success") {
+        toast(`Expired key for “${name}”`);
         onDone();
       } else {
         setError(result.error ?? "Couldn't expire the node key.");
@@ -407,6 +416,7 @@ function DeleteForm({
     startTransition(async () => {
       const result = await deleteNode(nodeId);
       if (result.status === "success") {
+        toast(`Deleted “${name}”`);
         onDone();
         // Only surfaces where the current path dies with the node ask for a
         // redirect; the list views just let the revalidated data drop the row.

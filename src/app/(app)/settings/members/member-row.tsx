@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { Select } from "@/components/ui/field";
 import { Td, Tr } from "@/components/ui/table";
+import { toast } from "@/components/ui/toast";
 import type { AppUser } from "@/lib/db";
 import { removeMember, updateMemberRole } from "./actions";
 
@@ -43,15 +44,24 @@ export function MemberRow({ member, isSelf, canManage, roleOptions }: MemberRowP
     setError(null);
     startTransition(async () => {
       const result = await updateMemberRole(member.id, nextRole);
-      if (result.status === "error") setError(result.error);
+      if (result.status === "error") {
+        setError(result.error);
+      } else {
+        const label = roleOptions.find((r) => r.value === nextRole)?.label ?? nextRole;
+        toast(`${member.name}'s role changed to ${label}`);
+      }
     });
   }
 
   function onRemove() {
     startTransition(async () => {
       const result = await removeMember(member.id);
-      if (result.status === "success") setConfirmRemove(false);
-      else setError(result.error);
+      if (result.status === "success") {
+        setConfirmRemove(false);
+        toast(`${member.name} removed`);
+      } else {
+        setError(result.error);
+      }
     });
   }
 

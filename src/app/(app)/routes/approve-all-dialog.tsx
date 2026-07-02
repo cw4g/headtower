@@ -4,6 +4,7 @@ import * as React from "react";
 import { useTransition } from "react";
 import { CheckCheck, TriangleAlert } from "lucide-react";
 import { Button, type ButtonProps } from "@/components/ui/button";
+import { toast } from "@/components/ui/toast";
 import {
   Dialog,
   DialogTrigger,
@@ -61,6 +62,7 @@ export function ApproveAllButton({
     startTransition(async () => {
       const result = await approveAllPending(entries);
       if (result.status === "success") {
+        toast(`Approved ${totalCidrs} route${totalCidrs === 1 ? "" : "s"}`);
         setOpen(false);
       } else {
         setError(result.error ?? "Couldn't approve the pending routes.");

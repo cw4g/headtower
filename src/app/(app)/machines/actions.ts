@@ -12,6 +12,7 @@
 import { revalidatePath } from "next/cache";
 import { nodes } from "@/lib/headscale";
 import { audit, authorize } from "@/lib/authz";
+import { can } from "@/lib/rbac";
 import { describeHeadscaleError } from "./errors";
 
 /** Outcome of a node mutation, shaped for the dialog's inline error handling. */
@@ -152,4 +153,190 @@ export async function deleteNode(id: string): Promise<NodeActionResult> {
   // The node is gone: refresh the list and drop the now-dead detail path.
   revalidateNode(id);
   return { status: "success" };
+}
+
+/* ------------------------------------------------------------------ *
+ * Bulk mutations - the floating action bar loops the per-id primitives
+ * above over a selection, re-checking RBAC per node and collecting
+ * per-node outcomes so a partial failure surfaces the exact rows that
+ * didn't take rather than failing the whole batch.
+ * ------------------------------------------------------------------ */
+
+/** Hard ceiling on a single bulk op, matching the audit store's page cap. */
+const BULK_LIMIT = 200;
+
+/** One failed node in a bulk op, keyed by id so the bar can name the row. */
+export interface BulkFailure {
+  id: string;
+  error: string;
+}
+
+/** Aggregate outcome of a bulk op: how many took, and which rows didn't. */
+export interface BulkActionResult {
+  succeeded: number;
+  failed: number;
+  errors: BulkFailure[];
+}
+
+/** Reject an out-of-range selection as an all-failed result with one reason. */
+function rejectSelection(ids: string[], reason: string): BulkActionResult {
+  return {
+    succeeded: 0,
+    failed: ids.length,
+    errors: ids.map((id) => ({ id, error: reason })),
+  };
+}
+
+/** De-dupe ids while preserving order; drops blanks. */
+function uniqueIds(ids: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of ids) {
+    const id = raw.trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
+/** Expire the keys of every selected node, collecting per-node outcomes. */
+export async function bulkExpireNodes(
+  rawIds: string[],
+): Promise<BulkActionResult> {
+  const gate = await authorize("machines.write");
+  if (!gate.ok) return rejectSelection(rawIds, gate.reason);
+
+  const ids = uniqueIds(rawIds);
+  if (ids.length === 0) return { succeeded: 0, failed: 0, errors: [] };
+  if (ids.length > BULK_LIMIT) {
+    return rejectSelection(ids, `Select ${BULK_LIMIT} or fewer machines.`);
+  }
+
+  const errors: BulkFailure[] = [];
+  let succeeded = 0;
+  for (const id of ids) {
+    // Per-node RBAC re-check: role can't drift mid-loop, but re-gating each
+    // node keeps the batch honest if the capability model ever grows per-node.
+    if (!can(gate.session.role, "machines.write")) {
+      errors.push({ id, error: "Not allowed." });
+      continue;
+    }
+    try {
+      await nodes.expire(id);
+      succeeded++;
+    } catch (err) {
+      errors.push({ id, error: describeHeadscaleError(err) });
+    }
+  }
+
+  await audit(gate.session, {
+    action: "node.bulkExpire",
+    targetType: "node",
+    detail: { ids, count: ids.length, succeeded, failed: errors.length },
+  });
+  revalidatePath("/machines");
+  return { succeeded, failed: errors.length, errors };
+}
+
+/**
+ * Set tags on every selected node. Each item carries the complete tag set for
+ * that node, so the bar can implement "add tag" as a per-node union against the
+ * current tags while the server still runs the same replace-all `setTags`.
+ */
+export async function bulkSetNodeTags(
+  items: { id: string; tags: string[] }[],
+): Promise<BulkActionResult> {
+  const gate = await authorize("machines.write");
+  const rawIds = items.map((i) => i.id);
+  if (!gate.ok) return rejectSelection(rawIds, gate.reason);
+
+  if (items.length === 0) return { succeeded: 0, failed: 0, errors: [] };
+  if (items.length > BULK_LIMIT) {
+    return rejectSelection(rawIds, `Select ${BULK_LIMIT} or fewer machines.`);
+  }
+
+  const errors: BulkFailure[] = [];
+  let succeeded = 0;
+  for (const { id, tags } of items) {
+    if (!can(gate.session.role, "machines.write")) {
+      errors.push({ id, error: "Not allowed." });
+      continue;
+    }
+    // Normalise: trim, drop blanks, dedupe while preserving order.
+    const seen = new Set<string>();
+    const clean: string[] = [];
+    let invalid = false;
+    for (const raw of tags) {
+      const tag = raw.trim();
+      if (!tag) continue;
+      if (!TAG_RE.test(tag)) {
+        invalid = true;
+        break;
+      }
+      if (seen.has(tag)) continue;
+      seen.add(tag);
+      clean.push(tag);
+    }
+    if (invalid) {
+      errors.push({ id, error: "Tags must be tag:-prefixed." });
+      continue;
+    }
+    try {
+      await nodes.setTags(id, clean);
+      succeeded++;
+    } catch (err) {
+      errors.push({ id, error: describeHeadscaleError(err) });
+    }
+  }
+
+  await audit(gate.session, {
+    action: "node.bulkSetTags",
+    targetType: "node",
+    detail: {
+      ids: rawIds,
+      count: items.length,
+      succeeded,
+      failed: errors.length,
+    },
+  });
+  revalidatePath("/machines");
+  return { succeeded, failed: errors.length, errors };
+}
+
+/** Permanently remove every selected node, collecting per-node outcomes. */
+export async function bulkDeleteNodes(
+  rawIds: string[],
+): Promise<BulkActionResult> {
+  const gate = await authorize("machines.write");
+  if (!gate.ok) return rejectSelection(rawIds, gate.reason);
+
+  const ids = uniqueIds(rawIds);
+  if (ids.length === 0) return { succeeded: 0, failed: 0, errors: [] };
+  if (ids.length > BULK_LIMIT) {
+    return rejectSelection(ids, `Select ${BULK_LIMIT} or fewer machines.`);
+  }
+
+  const errors: BulkFailure[] = [];
+  let succeeded = 0;
+  for (const id of ids) {
+    if (!can(gate.session.role, "machines.write")) {
+      errors.push({ id, error: "Not allowed." });
+      continue;
+    }
+    try {
+      await nodes.remove(id);
+      succeeded++;
+    } catch (err) {
+      errors.push({ id, error: describeHeadscaleError(err) });
+    }
+  }
+
+  await audit(gate.session, {
+    action: "node.bulkDelete",
+    targetType: "node",
+    detail: { ids, count: ids.length, succeeded, failed: errors.length },
+  });
+  revalidatePath("/machines");
+  return { succeeded, failed: errors.length, errors };
 }

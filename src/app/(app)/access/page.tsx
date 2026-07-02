@@ -4,9 +4,11 @@ import {
   policy as policyApi,
   type Policy,
 } from "@/lib/headscale";
+import { parseHeadscaleDetail } from "@/lib/headscale/describe";
 import { sessionCan } from "@/lib/authz";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { Chip } from "@/components/ui/chip";
+import { EmptyState } from "@/components/ui/empty-state";
 import { ConnectionError } from "@/components/machines/connection-error";
 import { PolicyWorkbench } from "./policy-workbench";
 
@@ -78,49 +80,27 @@ export default async function AccessPage() {
  * reachable — the document isn't set yet, or the server is in `file` mode.
  */
 function PolicyUnavailable({ detail }: { detail: string }) {
-  const message = extractDetail(detail);
+  const message = parseHeadscaleDetail(detail);
   return (
-    <div className="grid-field flex flex-col items-center justify-center gap-3 rounded-card border border-dashed border-line-strong px-6 py-16 text-center">
-      <span className="flex h-10 w-10 items-center justify-center rounded-card border border-line bg-surface text-ink-faint">
-        <FileLock2 className="h-5 w-5" aria-hidden />
-      </span>
-      <div className="flex flex-col gap-1">
-        <p className="text-sm font-medium text-ink">No editable policy</p>
-        <p className="mx-auto max-w-md text-xs text-ink-muted">
+    <EmptyState
+      icon={FileLock2}
+      title="No editable policy"
+      description={
+        <>
           The control plane returned no policy document. Headscale only serves an
           editable policy when it runs in{" "}
           <span className="data text-ink">policy.mode: database</span>. In{" "}
           <span className="data text-ink">file</span> mode the server owns the
           document and edits happen on the host.
-        </p>
-        {message && (
-          <p className="data mx-auto mt-1 max-w-md break-words text-[11px] text-ink-faint">
+        </>
+      }
+      action={
+        message ? (
+          <p className="data mx-auto max-w-md break-words text-[11px] text-ink-faint">
             {message}
           </p>
-        )}
-      </div>
-    </div>
+        ) : undefined
+      }
+    />
   );
-}
-
-/** Pull a readable message out of a gateway error body, if present. */
-function extractDetail(body: string): string | null {
-  if (!body) return null;
-  try {
-    const parsed: unknown = JSON.parse(body);
-    if (parsed && typeof parsed === "object") {
-      const obj = parsed as Record<string, unknown>;
-      const message =
-        typeof obj.message === "string"
-          ? obj.message
-          : typeof obj.error === "string"
-            ? obj.error
-            : undefined;
-      if (message && message.trim()) return message.trim();
-    }
-  } catch {
-    // Not JSON; fall through.
-  }
-  const trimmed = body.trim();
-  return trimmed ? trimmed.slice(0, 200) : null;
 }

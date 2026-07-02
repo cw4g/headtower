@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
+import { toast } from "@/components/ui/toast";
 import {
   Dialog,
   DialogContent,
@@ -166,6 +167,7 @@ function RenameForm({ userId, name, onDone }: FormProps) {
     startTransition(async () => {
       const result = await renameUser(userId, trimmed);
       if (result.status === "success") {
+        toast(`Renamed to “${trimmed}”`);
         onDone();
       } else {
         setError(result.error ?? "Couldn't rename the user.");
@@ -269,6 +271,7 @@ function DeleteForm({
     startTransition(async () => {
       const result = await deleteUser(userId);
       if (result.status === "success") {
+        toast(`Deleted “${name}”`);
         // The user no longer exists; leave its now-dead detail page.
         onDone();
         router.push(redirectAfterDelete);

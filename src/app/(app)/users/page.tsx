@@ -318,21 +318,20 @@ function Avatar({ user, account }: { user: User; account: AppUser | null }) {
 
 function ErrorPanel({ message }: { message: string }) {
   return (
-    <div className="grid-field flex flex-col items-center justify-center gap-3 rounded-card border border-dashed border-critical-500/40 px-6 py-14 text-center">
-      <span className="flex h-10 w-10 items-center justify-center rounded-card border border-critical-500/30 bg-critical-500/10 text-critical-500">
-        <TriangleAlert className="h-5 w-5" aria-hidden />
-      </span>
-      <div className="flex flex-col gap-1">
-        <p className="text-sm font-medium text-ink">Couldn&apos;t load users</p>
-        <p className="mx-auto max-w-sm text-xs text-ink-muted">{message}</p>
-      </div>
-      <Link
-        href="/users"
-        className="text-xs font-medium text-beacon-500 transition-colors hover:text-beacon-400"
-      >
-        Retry
-      </Link>
-    </div>
+    <EmptyState
+      tone="critical"
+      icon={TriangleAlert}
+      title="Couldn't load users"
+      description={message}
+      action={
+        <Link
+          href="/users"
+          className="text-xs font-medium text-beacon-500 transition-colors hover:text-beacon-400"
+        >
+          Retry
+        </Link>
+      }
+    />
   );
 }
 

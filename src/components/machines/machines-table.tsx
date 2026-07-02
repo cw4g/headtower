@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Antenna, ChevronRight, Network, Search, SignalHigh, X } from "lucide-react";
+import { Antenna, ChevronRight, Network, SignalHigh } from "lucide-react";
 import {
   Table,
   TableHead,
@@ -14,21 +14,21 @@ import {
 } from "@/components/ui/table";
 import { StatusDot } from "@/components/ui/status-dot";
 import { Chip, Tag } from "@/components/ui/chip";
-import { Input } from "@/components/ui/field";
-import { Kbd } from "@/components/ui/kbd";
 import { NodeActionsMenu } from "@/components/machines/node-actions-menu";
+import { MachinesToolbar } from "@/components/machines/machines-toolbar";
+import { BulkActionBar } from "@/components/machines/bulk-action-bar";
+import { useMachinesFilter } from "@/components/machines/use-machines-filter";
 import { cn } from "@/lib/cn";
 import {
   agentOsLabel,
   nodeDot,
   ownerLabel,
-  matchesQuery,
-  matchesStatus,
-  MACHINE_STATUS_FILTERS,
   type DotStatus,
-  type StatusFilter,
   type NodeView,
 } from "@/lib/machines";
+
+/** Hard ceiling on a selection, matching the bulk Server Actions. */
+const MAX_SELECT = 200;
 
 /**
  * Status-edge border color per row - the same status read as the card grid's
@@ -58,153 +58,126 @@ export function MachinesTable({
 }: {
   nodes: NodeView[];
   /**
-   * Gates the per-row actions column. Computed server-side via
-   * `sessionCan("machines.write")` and passed down from the page, matching
-   * how the node detail page gates its own Actions card.
+   * Gates the per-row actions column and the bulk selection column. Computed
+   * server-side via `sessionCan("machines.write")` and passed down from the
+   * page, matching how the node detail page gates its own Actions card.
    */
   canManage?: boolean;
 }) {
   const router = useRouter();
-  const [query, setQuery] = React.useState("");
-  const [status, setStatus] = React.useState<StatusFilter>("all");
-  const searchRef = React.useRef<HTMLInputElement>(null);
+  const filter = useMachinesFilter(nodes);
+  const { filtered, clear } = filter;
 
-  // Keyboard-first: "/" focuses the filter from anywhere on the view.
-  React.useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (
-        event.key === "/" &&
-        !event.metaKey &&
-        !event.ctrlKey &&
-        !(event.target instanceof HTMLInputElement) &&
-        !(event.target instanceof HTMLTextAreaElement)
-      ) {
-        event.preventDefault();
-        searchRef.current?.focus();
-      }
+  // Selection is a set of node ids over the VISIBLE (filtered) rows; it prunes
+  // itself whenever the filter changes so a hidden row can't stay selected.
+  const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const lastIndexRef = React.useRef<number | null>(null);
+
+  // Prune selections that leave the visible/filtered set. Done during render -
+  // the React-recommended way to adjust state when a derived input changes -
+  // so it lands before paint without a second effect pass or a cascade.
+  const visibleIds = React.useMemo(
+    () => new Set(filtered.map((n) => n.id)),
+    [filtered],
+  );
+  const [seenVisible, setSeenVisible] = React.useState(visibleIds);
+  if (seenVisible !== visibleIds) {
+    setSeenVisible(visibleIds);
+    if ([...selected].some((id) => !visibleIds.has(id))) {
+      setSelected(new Set([...selected].filter((id) => visibleIds.has(id))));
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }
 
-  const filtered = React.useMemo(
-    () =>
-      nodes.filter(
-        (node) => matchesStatus(node, status) && matchesQuery(node, query),
-      ),
-    [nodes, status, query],
+  const selectedNodes = React.useMemo(
+    () => filtered.filter((n) => selected.has(n.id)),
+    [filtered, selected],
   );
 
-  const onlineCount = React.useMemo(
-    () => nodes.filter((n) => n.online && !n.expired).length,
-    [nodes],
-  );
+  const allChecked = filtered.length > 0 && selectedNodes.length === filtered.length;
+  const someChecked = selectedNodes.length > 0 && !allChecked;
 
-  // One extra column for the actions kebab when the session can manage nodes.
-  const columnCount = canManage ? 8 : 7;
+  const headerRef = React.useRef<HTMLInputElement>(null);
+  React.useEffect(() => {
+    if (headerRef.current) headerRef.current.indeterminate = someChecked;
+  }, [someChecked]);
+
+  function toggleAll() {
+    lastIndexRef.current = null;
+    setSelected((prev) => {
+      const visible = filtered.map((n) => n.id);
+      const allSel = visible.length > 0 && visible.every((id) => prev.has(id));
+      const next = new Set(prev);
+      if (allSel) {
+        for (const id of visible) next.delete(id);
+        return next;
+      }
+      for (const id of visible) {
+        if (next.size >= MAX_SELECT) break;
+        next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function toggleRow(id: string, index: number, shiftKey: boolean) {
+    setSelected((prev) => {
+      const willSelect = !prev.has(id);
+      const next = new Set(prev);
+      if (shiftKey && lastIndexRef.current !== null) {
+        const from = Math.min(lastIndexRef.current, index);
+        const to = Math.max(lastIndexRef.current, index);
+        for (let i = from; i <= to; i++) {
+          const nid = filtered[i]?.id;
+          if (!nid) continue;
+          if (willSelect) next.add(nid);
+          else next.delete(nid);
+        }
+      } else if (willSelect) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
+      lastIndexRef.current = index;
+      return next.size > MAX_SELECT
+        ? new Set([...next].slice(0, MAX_SELECT))
+        : next;
+    });
+  }
+
+  function clearSelection() {
+    lastIndexRef.current = null;
+    setSelected(new Set());
+  }
+
+  function resolveSelection(ids: string[]) {
+    const removed = new Set(ids);
+    setSelected((prev) => new Set([...prev].filter((id) => !removed.has(id))));
+  }
+
+  // Selection + actions each add a leading/trailing column when manageable.
+  const columnCount = canManage ? 9 : 7;
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Toolbar: live count on the left, status segments + filter on the right. */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-xs text-ink-muted">
-          <span className="data text-ink">{filtered.length}</span>
-          <span className="text-ink-faint"> / </span>
-          <span className="data">{nodes.length}</span> machines
-          <span className="text-ink-faint"> · </span>
-          <span className="data text-online-600">{onlineCount}</span> online
-        </p>
-
-        <div className="flex items-center gap-2">
-          <div
-            className="hidden items-center gap-0.5 rounded-control border border-line bg-surface-2 p-0.5 md:flex"
-            role="tablist"
-            aria-label="Filter by status"
-          >
-            {MACHINE_STATUS_FILTERS.map((f) => {
-              const active = status === f.id;
-              return (
-                <button
-                  key={f.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => setStatus(f.id)}
-                  className={cn(
-                    "rounded-[0.4rem] px-2.5 py-1 text-xs font-medium transition-colors",
-                    active
-                      ? "bg-surface text-ink shadow-sm"
-                      : "text-ink-muted hover:text-ink",
-                  )}
-                >
-                  {f.label}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="relative">
-            <Search
-              className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-faint"
-              aria-hidden
-            />
-            <Input
-              ref={searchRef}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") setQuery("");
-              }}
-              placeholder="Filter machines"
-              aria-label="Filter machines"
-              className="h-8 w-56 pl-8 pr-16 text-xs"
-            />
-            {query ? (
-              <button
-                type="button"
-                onClick={() => setQuery("")}
-                aria-label="Clear filter"
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-ink-faint transition-colors hover:text-ink"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            ) : (
-              <Kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2">
-                /
-              </Kbd>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Mobile status segments (the toolbar set is hidden under md). */}
-      <div className="flex items-center gap-1 md:hidden">
-        {MACHINE_STATUS_FILTERS.map((f) => {
-          const active = status === f.id;
-          return (
-            <button
-              key={f.id}
-              type="button"
-              onClick={() => setStatus(f.id)}
-              aria-pressed={active}
-              className={cn(
-                "rounded-control border px-2 py-1 text-xs font-medium transition-colors",
-                active
-                  ? "border-line-strong bg-surface-2 text-ink"
-                  : "border-line text-ink-muted hover:text-ink",
-              )}
-            >
-              {f.label}
-            </button>
-          );
-        })}
-      </div>
+      <MachinesToolbar filter={filter} />
 
       <div className="overflow-hidden rounded-card border border-line bg-surface">
         <Table>
           <TableHead>
             <Tr className="hover:bg-transparent">
-              <Th className="pl-4">Status</Th>
+              {canManage && (
+                <Th className="w-10 pl-4">
+                  <input
+                    ref={headerRef}
+                    type="checkbox"
+                    checked={allChecked}
+                    onChange={toggleAll}
+                    aria-label="Select all visible machines"
+                    className="h-4 w-4 accent-beacon-500 align-middle"
+                  />
+                </Th>
+              )}
+              <Th className={canManage ? undefined : "pl-4"}>Status</Th>
               <Th>Machine</Th>
               <Th>Owner</Th>
               <Th>Addresses</Th>
@@ -227,10 +200,7 @@ export function MachinesTable({
                   <p className="text-sm text-ink-muted">No machines match.</p>
                   <button
                     type="button"
-                    onClick={() => {
-                      setQuery("");
-                      setStatus("all");
-                    }}
+                    onClick={clear}
                     className="mt-1 text-xs text-beacon-500 hover:underline"
                   >
                     Reset filters
@@ -238,11 +208,13 @@ export function MachinesTable({
                 </Td>
               </Tr>
             ) : (
-              filtered.map((node) => (
+              filtered.map((node, index) => (
                 <MachineRow
                   key={node.id}
                   node={node}
                   canManage={canManage}
+                  selected={selected.has(node.id)}
+                  onToggle={(shiftKey) => toggleRow(node.id, index, shiftKey)}
                   onOpen={() => router.push(`/machines/${node.id}`)}
                 />
               ))
@@ -250,6 +222,14 @@ export function MachinesTable({
           </TableBody>
         </Table>
       </div>
+
+      {canManage && (
+        <BulkActionBar
+          selected={selectedNodes}
+          onClear={clearSelection}
+          onResolve={resolveSelection}
+        />
+      )}
     </div>
   );
 }
@@ -257,10 +237,14 @@ export function MachinesTable({
 function MachineRow({
   node,
   canManage,
+  selected,
+  onToggle,
   onOpen,
 }: {
   node: NodeView;
   canManage: boolean;
+  selected: boolean;
+  onToggle: (shiftKey: boolean) => void;
   onOpen: () => void;
 }) {
   const dot = nodeDot(node);
@@ -273,10 +257,32 @@ function MachineRow({
       onClick={onOpen}
       // `group` so the row-hover-revealed open hint and actions kebab below
       // can key off one hover/focus-within state, same as the card grid.
-      className="group cursor-pointer"
+      className={cn("group cursor-pointer", selected && "bg-beacon-500/5")}
     >
+      {canManage && (
+        // Own click handler so ticking the box doesn't also open the row.
+        <Td className="w-10 pl-4" onClick={(e) => e.stopPropagation()}>
+          <input
+            type="checkbox"
+            checked={selected}
+            // A native change event drops shiftKey, so read it off the click
+            // and let onChange keep the box controlled.
+            onClick={(e) => onToggle(e.shiftKey)}
+            onChange={() => {}}
+            aria-label={`Select ${node.name}`}
+            className="h-4 w-4 accent-beacon-500 align-middle"
+          />
+        </Td>
+      )}
+
       {/* Status - the leading cell also carries the row's status-edge rail. */}
-      <Td className={cn("border-l-2 pl-4", EDGE_BORDER_CLASS[edge])}>
+      <Td
+        className={cn(
+          "border-l-2",
+          !canManage && "pl-4",
+          EDGE_BORDER_CLASS[edge],
+        )}
+      >
         <div className="flex items-center gap-2">
           <StatusDot status={dot.status} pulse={node.online} />
           <span className="text-xs text-ink-muted">{dot.label}</span>

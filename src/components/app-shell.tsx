@@ -2,6 +2,7 @@ import * as React from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { ConsoleSidebar } from "@/components/console-sidebar";
+import { ToastViewport } from "@/components/ui/toast";
 import type { Account } from "@/components/account-menu";
 import { getSession } from "@/lib/auth";
 import { isOidcEnabled } from "@/lib/auth/oidc";
@@ -78,6 +79,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
           {children}
         </div>
       </main>
+      <ToastViewport />
     </div>
   );
 }

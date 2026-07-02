@@ -2,13 +2,13 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { LayoutGrid, Rows3, type LucideIcon } from "lucide-react";
-import { cn } from "@/lib/cn";
+import { LayoutGrid, Rows3 } from "lucide-react";
+import { SegmentedTabs, type SegmentedOption } from "@/components/ui/segmented";
 import { persistMachineView, type MachineViewMode } from "@/lib/machines";
 
-const OPTIONS: { id: MachineViewMode; label: string; Icon: LucideIcon }[] = [
-  { id: "table", label: "Table", Icon: Rows3 },
-  { id: "cards", label: "Cards", Icon: LayoutGrid },
+const OPTIONS: SegmentedOption<MachineViewMode>[] = [
+  { value: "table", label: "Table", icon: Rows3 },
+  { value: "cards", label: "Cards", icon: LayoutGrid },
 ];
 
 /**
@@ -33,35 +33,12 @@ export function MachinesViewToggle({ view }: { view: MachineViewMode }) {
   }
 
   return (
-    <div
-      className={cn(
-        "flex items-center gap-0.5 rounded-control border border-line bg-surface-2 p-0.5 transition-opacity",
-        pending && "opacity-70",
-      )}
-      role="tablist"
-      aria-label="Machines view"
-    >
-      {OPTIONS.map(({ id, label, Icon }) => {
-        const isActive = optimistic === id;
-        return (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            aria-selected={isActive}
-            onClick={() => select(id)}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-[0.4rem] px-2.5 py-1 text-xs font-medium transition-colors",
-              isActive
-                ? "bg-surface text-ink shadow-sm"
-                : "text-ink-muted hover:text-ink",
-            )}
-          >
-            <Icon className="h-3.5 w-3.5" aria-hidden />
-            {label}
-          </button>
-        );
-      })}
-    </div>
+    <SegmentedTabs
+      options={OPTIONS}
+      value={optimistic}
+      onValueChange={select}
+      ariaLabel="Machines view"
+      className={pending ? "opacity-70 transition-opacity" : "transition-opacity"}
+    />
   );
 }

@@ -2,24 +2,24 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Antenna, ChevronRight, Network, Search, SignalHigh, X } from "lucide-react";
+import { Antenna, ChevronRight, Network, SignalHigh } from "lucide-react";
 import { StatusDot } from "@/components/ui/status-dot";
 import { Chip, Tag } from "@/components/ui/chip";
-import { Input } from "@/components/ui/field";
-import { Kbd } from "@/components/ui/kbd";
 import { Sparkline, type ChartTone } from "@/components/charts";
 import { NodeActionsMenu } from "@/components/machines/node-actions-menu";
+import { MachinesToolbar } from "@/components/machines/machines-toolbar";
+import { BulkActionBar } from "@/components/machines/bulk-action-bar";
+import { useMachinesFilter } from "@/components/machines/use-machines-filter";
 import { cn } from "@/lib/cn";
 import {
   agentOsLabel,
   nodeDot,
-  matchesQuery,
-  matchesStatus,
   reachabilitySeries,
-  MACHINE_STATUS_FILTERS,
-  type StatusFilter,
   type NodeView,
 } from "@/lib/machines";
+
+/** Hard ceiling on a selection, matching the bulk Server Actions. */
+const MAX_SELECT = 200;
 
 /**
  * The card-grid presentation of the machines list: a denser, host-oriented read
@@ -27,10 +27,10 @@ import {
  * status, identity, primary address, tags, route/exit markers, last-seen, and a
  * derived recent-reachability sparkline - and links straight to the detail view.
  *
- * It carries its own toolbar (search + status segments) so the two views behave
- * identically; the shared filter grammar lives in `@/lib/machines`. `nowMs` is
- * the server request clock, threaded through so the reachability hint renders
- * the same on the server and after hydration.
+ * It shares the URL-backed toolbar/filter and the bulk action bar with the
+ * table view, so switching presentations preserves both the active filter and
+ * the working selection. `nowMs` is the server request clock, threaded through
+ * so the reachability hint renders the same on the server and after hydration.
  */
 export function MachinesCards({
   nodes,
@@ -40,153 +40,66 @@ export function MachinesCards({
   nodes: NodeView[];
   nowMs: number;
   /**
-   * Gates the per-card actions kebab. Computed server-side via
-   * `sessionCan("machines.write")` and passed down from the page, matching
-   * how the node detail page gates its own Actions card.
+   * Gates the per-card actions kebab and the bulk selection affordance.
+   * Computed server-side via `sessionCan("machines.write")` and passed down
+   * from the page, matching how the node detail page gates its own Actions card.
    */
   canManage?: boolean;
 }) {
-  const [query, setQuery] = React.useState("");
-  const [status, setStatus] = React.useState<StatusFilter>("all");
-  const searchRef = React.useRef<HTMLInputElement>(null);
+  const filter = useMachinesFilter(nodes);
+  const { filtered, clear } = filter;
 
-  // Keyboard-first: "/" focuses the filter from anywhere on the view.
-  React.useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (
-        event.key === "/" &&
-        !event.metaKey &&
-        !event.ctrlKey &&
-        !(event.target instanceof HTMLInputElement) &&
-        !(event.target instanceof HTMLTextAreaElement)
-      ) {
-        event.preventDefault();
-        searchRef.current?.focus();
-      }
+  // Selection over the VISIBLE (filtered) cards; prunes itself on filter change.
+  const [selected, setSelected] = React.useState<Set<string>>(new Set());
+
+  // Prune selections that leave the visible/filtered set. Done during render -
+  // the React-recommended way to adjust state when a derived input changes -
+  // so it lands before paint without a second effect pass or a cascade.
+  const visibleIds = React.useMemo(
+    () => new Set(filtered.map((n) => n.id)),
+    [filtered],
+  );
+  const [seenVisible, setSeenVisible] = React.useState(visibleIds);
+  if (seenVisible !== visibleIds) {
+    setSeenVisible(visibleIds);
+    if ([...selected].some((id) => !visibleIds.has(id))) {
+      setSelected(new Set([...selected].filter((id) => visibleIds.has(id))));
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }
 
-  const filtered = React.useMemo(
-    () =>
-      nodes.filter(
-        (node) => matchesStatus(node, status) && matchesQuery(node, query),
-      ),
-    [nodes, status, query],
+  const selectedNodes = React.useMemo(
+    () => filtered.filter((n) => selected.has(n.id)),
+    [filtered, selected],
   );
 
-  const onlineCount = React.useMemo(
-    () => nodes.filter((n) => n.online && !n.expired).length,
-    [nodes],
-  );
+  function toggleCard(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else if (next.size < MAX_SELECT) next.add(id);
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelected(new Set());
+  }
+
+  function resolveSelection(ids: string[]) {
+    const removed = new Set(ids);
+    setSelected((prev) => new Set([...prev].filter((id) => !removed.has(id))));
+  }
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Toolbar: live count on the left, status segments + filter on the right. */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-xs text-ink-muted">
-          <span className="data text-ink">{filtered.length}</span>
-          <span className="text-ink-faint"> / </span>
-          <span className="data">{nodes.length}</span> machines
-          <span className="text-ink-faint"> · </span>
-          <span className="data text-online-600">{onlineCount}</span> online
-        </p>
-
-        <div className="flex items-center gap-2">
-          <div
-            className="hidden items-center gap-0.5 rounded-control border border-line bg-surface-2 p-0.5 md:flex"
-            role="tablist"
-            aria-label="Filter by status"
-          >
-            {MACHINE_STATUS_FILTERS.map((f) => {
-              const active = status === f.id;
-              return (
-                <button
-                  key={f.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => setStatus(f.id)}
-                  className={cn(
-                    "rounded-[0.4rem] px-2.5 py-1 text-xs font-medium transition-colors",
-                    active
-                      ? "bg-surface text-ink shadow-sm"
-                      : "text-ink-muted hover:text-ink",
-                  )}
-                >
-                  {f.label}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="relative">
-            <Search
-              className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-faint"
-              aria-hidden
-            />
-            <Input
-              ref={searchRef}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") setQuery("");
-              }}
-              placeholder="Filter machines"
-              aria-label="Filter machines"
-              className="h-8 w-56 pl-8 pr-16 text-xs"
-            />
-            {query ? (
-              <button
-                type="button"
-                onClick={() => setQuery("")}
-                aria-label="Clear filter"
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-ink-faint transition-colors hover:text-ink"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            ) : (
-              <Kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2">
-                /
-              </Kbd>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Mobile status segments (the toolbar set is hidden under md). */}
-      <div className="flex items-center gap-1 md:hidden">
-        {MACHINE_STATUS_FILTERS.map((f) => {
-          const active = status === f.id;
-          return (
-            <button
-              key={f.id}
-              type="button"
-              onClick={() => setStatus(f.id)}
-              aria-pressed={active}
-              className={cn(
-                "rounded-control border px-2 py-1 text-xs font-medium transition-colors",
-                active
-                  ? "border-line-strong bg-surface-2 text-ink"
-                  : "border-line text-ink-muted hover:text-ink",
-              )}
-            >
-              {f.label}
-            </button>
-          );
-        })}
-      </div>
+      <MachinesToolbar filter={filter} />
 
       {filtered.length === 0 ? (
         <div className="rounded-card border border-dashed border-line-strong px-6 py-12 text-center">
           <p className="text-sm text-ink-muted">No machines match.</p>
           <button
             type="button"
-            onClick={() => {
-              setQuery("");
-              setStatus("all");
-            }}
+            onClick={clear}
             className="mt-1 text-xs text-beacon-500 hover:underline"
           >
             Reset filters
@@ -200,9 +113,19 @@ export function MachinesCards({
               node={node}
               nowMs={nowMs}
               canManage={canManage}
+              selected={selected.has(node.id)}
+              onToggle={() => toggleCard(node.id)}
             />
           ))}
         </div>
+      )}
+
+      {canManage && (
+        <BulkActionBar
+          selected={selectedNodes}
+          onClear={clearSelection}
+          onResolve={resolveSelection}
+        />
       )}
     </div>
   );
@@ -212,10 +135,14 @@ function HostCard({
   node,
   nowMs,
   canManage,
+  selected,
+  onToggle,
 }: {
   node: NodeView;
   nowMs: number;
   canManage: boolean;
+  selected: boolean;
+  onToggle: () => void;
 }) {
   const dot = nodeDot(node);
   const series = React.useMemo(
@@ -247,17 +174,19 @@ function HostCard({
   const hasTags = node.tags.length > 0 || node.invalidTags.length > 0;
 
   return (
-    // Relative wrapper so the actions kebab can float in the corner as a
-    // sibling of the card's Link - nesting an interactive trigger inside the
-    // anchor would double up on clicks (both "open the menu" and "navigate").
-    // `group` lives here (not on the Link) so both the Link's own descendants
-    // and the sibling kebab can react to one hover/focus-within state.
+    // Relative wrapper so the actions kebab and selection checkbox can float in
+    // the corners as siblings of the card's Link - nesting an interactive
+    // trigger inside the anchor would double up on clicks (both "toggle" and
+    // "navigate"). `group` lives here (not on the Link) so both the Link's own
+    // descendants and the sibling controls can react to one hover state.
     <div className="group relative h-full">
       <Link
         href={`/machines/${node.id}`}
         className={cn(
-          "relative flex h-full flex-col gap-3 overflow-hidden rounded-card border border-line bg-surface p-3.5 transition-colors hover:border-line-strong hover:bg-surface-2/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-beacon-500/40",
+          "relative flex h-full flex-col gap-3 overflow-hidden rounded-card border bg-surface p-3.5 transition-colors hover:border-line-strong hover:bg-surface-2/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-beacon-500/40",
+          selected ? "border-beacon-500/50 bg-beacon-500/5" : "border-line",
           canManage && "pr-9",
+          canManage && "pl-9",
         )}
       >
         {/* Identity: status dot + name, with agent OS / version to the right. */}
@@ -413,6 +342,27 @@ function HostCard({
           </div>
         </div>
       </Link>
+
+      {canManage && (
+        <label
+          // A sibling of the Link so ticking it never navigates. Kept discreet
+          // until hovered or checked, mirroring the kebab's resting calm.
+          className={cn(
+            "absolute left-2.5 top-3 inline-flex cursor-pointer items-center transition-opacity",
+            selected
+              ? "opacity-100"
+              : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+          )}
+        >
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onToggle}
+            aria-label={`Select ${node.name}`}
+            className="h-4 w-4 accent-beacon-500"
+          />
+        </label>
+      )}
 
       {canManage && (
         <NodeActionsMenu

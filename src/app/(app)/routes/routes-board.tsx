@@ -23,6 +23,7 @@ import {
   Td,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
 import type { DotStatus } from "@/lib/machines";
 import type { ExitStatus, RouteGroup, RouteState } from "@/lib/routes";
@@ -232,6 +233,8 @@ function RouteRow({
       const result = await run();
       if (result.status === "error") {
         setError(result.error ?? "Couldn't update the route.");
+      } else {
+        toast(approve ? `Approved ${cidr}` : `Revoked ${cidr}`);
       }
     });
   }

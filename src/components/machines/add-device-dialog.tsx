@@ -27,7 +27,7 @@ import { Field, Input, Select } from "@/components/ui/field";
 import { CopyButton } from "@/components/ui/copy-button";
 import { Tag } from "@/components/ui/chip";
 import { TokenInput } from "@/components/ui/token-input";
-import { cn } from "@/lib/cn";
+import { SegmentedTabs } from "@/components/ui/segmented";
 import {
   PRE_AUTH_KEY_DEFAULT,
   PRE_AUTH_KEY_PRESETS,
@@ -468,33 +468,14 @@ function ModeTabs({
   disabled: boolean;
 }) {
   return (
-    <div
-      className="flex flex-wrap items-center gap-0.5 rounded-control border border-line bg-surface-2 p-0.5"
-      role="tablist"
-      aria-label="Add device mode"
-    >
-      {MODE_TABS.map(({ id, label }) => {
-        const isActive = mode === id;
-        return (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            aria-selected={isActive}
-            disabled={disabled}
-            onClick={() => onChange(id)}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-[0.4rem] px-2.5 py-1 text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-50",
-              isActive
-                ? "bg-surface text-ink shadow-sm"
-                : "text-ink-muted hover:text-ink",
-            )}
-          >
-            {label}
-          </button>
-        );
-      })}
-    </div>
+    <SegmentedTabs
+      options={MODE_TABS.map(({ id, label }) => ({ value: id, label }))}
+      value={mode}
+      onValueChange={onChange}
+      ariaLabel="Add device mode"
+      disabled={disabled}
+      wrap
+    />
   );
 }
 
@@ -706,32 +687,13 @@ function OsCommandTabs({
 
   return (
     <div className="flex flex-col gap-2">
-      <div
-        className="flex flex-wrap items-center gap-0.5 rounded-control border border-line bg-surface-2 p-0.5"
-        role="tablist"
-        aria-label="Device platform"
-      >
-        {OS_TABS.map(({ id, label }) => {
-          const isActive = os === id;
-          return (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              aria-selected={isActive}
-              onClick={() => setOs(id)}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-[0.4rem] px-2.5 py-1 text-xs font-medium transition-colors",
-                isActive
-                  ? "bg-surface text-ink shadow-sm"
-                  : "text-ink-muted hover:text-ink",
-              )}
-            >
-              {label}
-            </button>
-          );
-        })}
-      </div>
+      <SegmentedTabs
+        options={OS_TABS.map(({ id, label }) => ({ value: id, label }))}
+        value={os}
+        onValueChange={setOs}
+        ariaLabel="Device platform"
+        wrap
+      />
 
       {isMobile ? (
         <div className="flex flex-col gap-2">

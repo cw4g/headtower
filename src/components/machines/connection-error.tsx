@@ -1,80 +1,24 @@
 import * as React from "react";
-import { PlugZap, KeyRound, ServerCrash, TimerOff } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
-// Import the error classes from their PURE modules, not the barrels: the
-// Headscale barrel and config index reach the request/DB layers (node:sqlite),
-// and this component is pulled into the client bundle by the route error boundary.
+// Import the error classes and classifier from their PURE modules, not the
+// barrels: the Headscale barrel and config index reach the request/DB layers
+// (node:sqlite), and this component is pulled into the client bundle by the
+// route error boundary.
+import { HeadscaleConfigError } from "@/lib/headscale/errors";
 import {
-  HeadscaleConfigError,
-  HeadscaleNetworkError,
-  HeadscaleTimeoutError,
-  HeadscaleRequestError,
-} from "@/lib/headscale/errors";
+  describeHeadscaleErrorDetailed,
+  type DescribedHeadscaleError,
+} from "@/lib/headscale/describe";
 import { ConfigError } from "@/lib/config/types";
 
-interface Described {
-  icon: LucideIcon;
-  title: string;
-  detail: string;
-  hints: string[];
-}
-
-function describe(error: unknown): Described {
-  if (error instanceof ConfigError || error instanceof HeadscaleConfigError) {
-    return {
-      icon: PlugZap,
-      title: "Headscale isn't configured",
-      detail: error.message,
-      hints: [
-        "Connect Headscale from the in-app setup wizard at /setup",
-        "Or set HEADSCALE_URL and HEADSCALE_API_KEY in the environment",
-      ],
-    };
+function describe(error: unknown): DescribedHeadscaleError {
+  // A config-layer failure renders identically to a Headscale config error;
+  // route it through the shared classifier so the copy stays in one place.
+  if (error instanceof ConfigError) {
+    return describeHeadscaleErrorDetailed(
+      new HeadscaleConfigError(error.message),
+    );
   }
-  if (error instanceof HeadscaleTimeoutError) {
-    return {
-      icon: TimerOff,
-      title: "Headscale timed out",
-      detail: error.message,
-      hints: [
-        "Confirm the control plane is running and reachable from this host",
-        "Check for a firewall or proxy between Headtower and Headscale",
-      ],
-    };
-  }
-  if (error instanceof HeadscaleNetworkError) {
-    return {
-      icon: ServerCrash,
-      title: "Can't reach Headscale",
-      detail: error.message,
-      hints: [
-        "Verify HEADSCALE_URL is correct and resolvable",
-        "Confirm TLS is valid if you're using https",
-      ],
-    };
-  }
-  if (error instanceof HeadscaleRequestError) {
-    const auth = error.status === 401 || error.status === 403;
-    return {
-      icon: auth ? KeyRound : ServerCrash,
-      title: auth
-        ? "Headscale rejected the API key"
-        : `Headscale returned ${error.status}`,
-      detail: error.message,
-      hints: auth
-        ? [
-            "The API key may be expired or lack permissions",
-            "Generate a fresh key with `headscale apikeys create`",
-          ]
-        : ["Inspect the Headscale server logs for the failing request"],
-    };
-  }
-  return {
-    icon: ServerCrash,
-    title: "Something went wrong",
-    detail: error instanceof Error ? error.message : String(error),
-    hints: [],
-  };
+  return describeHeadscaleErrorDetailed(error);
 }
 
 /** An on-brand, diagnostic panel for any failure talking to Headscale. */

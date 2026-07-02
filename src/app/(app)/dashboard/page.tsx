@@ -420,23 +420,24 @@ function Stat({
 
 function ErrorState({ message }: { message: string }) {
   return (
-    <Surface className="flex flex-col items-center gap-4 px-6 py-14 text-center">
-      <span className="flex h-11 w-11 items-center justify-center rounded-card border border-critical-500/30 bg-critical-500/10 text-critical-500">
-        <ServerOff className="h-5 w-5" aria-hidden />
-      </span>
-      <div className="flex flex-col gap-1.5">
-        <p className="text-sm font-medium text-ink">Control plane unreachable</p>
-        <p className="mx-auto max-w-md text-xs text-ink-muted">
+    <EmptyState
+      tone="critical"
+      icon={ServerOff}
+      title="Control plane unreachable"
+      description={
+        <>
           Headtower could not read tailnet state from Headscale. Confirm{" "}
           <span className="data text-ink-muted">HEADSCALE_URL</span> and{" "}
           <span className="data text-ink-muted">HEADSCALE_API_KEY</span> are set
           and that the control plane is reachable.
+        </>
+      }
+      action={
+        <p className="data max-w-lg break-words text-xs text-critical-500">
+          {message}
         </p>
-      </div>
-      <p className="data max-w-lg break-words text-xs text-critical-500">
-        {message}
-      </p>
-    </Surface>
+      }
+    />
   );
 }
 
