@@ -4,7 +4,6 @@ import * as React from "react";
 import { Search, X } from "lucide-react";
 import { Input } from "@/components/ui/field";
 import { Kbd } from "@/components/ui/kbd";
-import { Chip } from "@/components/ui/chip";
 import { SegmentedTabs } from "@/components/ui/segmented";
 import { cn } from "@/lib/cn";
 import { MACHINE_STATUS_FILTERS } from "@/lib/machines";
@@ -26,9 +25,23 @@ export function MachinesToolbar({
 }: {
   filter: MachinesFilter;
 }) {
-  const { filtered, total, onlineCount, state, active, setQuery, setStatus, clear } =
-    filter;
+  const {
+    filtered,
+    total,
+    onlineCount,
+    state,
+    active,
+    setQuery,
+    setStatus,
+    setUser,
+    setTag,
+    clear,
+  } = filter;
   const searchRef = React.useRef<HTMLInputElement>(null);
+
+  const statusLabel =
+    MACHINE_STATUS_FILTERS.find((f) => f.id === state.status)?.label ??
+    state.status;
 
   // Keyboard-first: "/" focuses the filter from anywhere on the view.
   React.useEffect(() => {
@@ -130,19 +143,38 @@ export function MachinesToolbar({
         })}
       </div>
 
-      {/* Active-scope readout: deep-link owner / tag chips + a Clear affordance. */}
+      {/* Active-scope readout: one dismissible pill per live filter dimension,
+          each dropping just that one, plus a clear-all affordance. */}
       {active && (
-        <div className="flex flex-wrap items-center gap-2 text-xs text-ink-muted">
-          <span className="text-ink-faint">Filtered</span>
+        <div className="flex flex-wrap items-center gap-1.5 text-xs text-ink-muted">
+          <span className="mr-0.5 text-ink-faint">Filtered</span>
+          {state.status !== "all" && (
+            <FilterPill
+              label="status"
+              value={statusLabel}
+              onDismiss={() => setStatus("all")}
+            />
+          )}
+          {state.query && (
+            <FilterPill
+              label="search"
+              value={state.query}
+              onDismiss={() => setQuery("")}
+            />
+          )}
           {state.user && (
-            <Chip variant="beacon">
-              owner: <span className="data ml-1">{state.user}</span>
-            </Chip>
+            <FilterPill
+              label="owner"
+              value={state.user}
+              onDismiss={() => setUser(null)}
+            />
           )}
           {state.tag && (
-            <Chip variant="beacon">
-              tag: <span className="data ml-1">{state.tag.replace(/^tag:/, "")}</span>
-            </Chip>
+            <FilterPill
+              label="tag"
+              value={state.tag.replace(/^tag:/, "")}
+              onDismiss={() => setTag(null)}
+            />
           )}
           <button
             type="button"
@@ -150,10 +182,42 @@ export function MachinesToolbar({
             className="inline-flex items-center gap-1 rounded-control px-1.5 py-0.5 font-medium text-ink-muted transition-colors hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beacon-500/40"
           >
             <X className="h-3.5 w-3.5" aria-hidden />
-            Clear filters
+            Clear all
           </button>
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * A single active-filter pill: a quiet, schematic `label: value` token with an
+ * x that drops just that one filter dimension. The clear-all button beside the
+ * pill row still resets everything at once.
+ */
+function FilterPill({
+  label,
+  value,
+  onDismiss,
+}: {
+  label: string;
+  value: string;
+  onDismiss: () => void;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-control border border-line bg-surface-2 py-0.5 pl-2 pr-1 text-ink-muted">
+      <span className="text-ink-faint">{label}</span>
+      <span className="data max-w-[12rem] truncate text-ink" title={value}>
+        {value}
+      </span>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label={`Remove ${label} filter`}
+        className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-[0.2rem] text-ink-faint transition-colors hover:bg-surface hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beacon-500/40"
+      >
+        <X className="h-3 w-3" aria-hidden />
+      </button>
+    </span>
   );
 }

@@ -58,6 +58,17 @@ export interface AddDeviceDialogProps {
    */
   loginServerUrl: string;
   trigger?: React.ReactNode;
+  /**
+   * Optional controlled open state. When provided (with `onOpenChange`), the
+   * dialog is driven externally and renders no trigger of its own - used by the
+   * enrolment deep-link handler that opens it from `?add=1` / `?register=`.
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Flow to start on when first opened (defaults to "create"). */
+  initialMode?: AddDeviceMode;
+  /** Registration key to prefill in the "register device" flow. */
+  initialRegisterKey?: string;
 }
 
 /** The success branch of {@link CreateDeviceKeyState} — what the "create key" reveal step renders. */
@@ -76,7 +87,8 @@ const OS_TABS: { id: DeviceOS; label: string }[] = [
   { id: "android", label: "Android" },
 ];
 
-type Mode = "create" | "existing" | "register";
+export type AddDeviceMode = "create" | "existing" | "register";
+type Mode = AddDeviceMode;
 
 const MODE_TABS: { id: Mode; label: string }[] = [
   { id: "create", label: "Create key" },
@@ -100,9 +112,15 @@ export function AddDeviceDialog({
   users,
   loginServerUrl,
   trigger,
+  open: controlledOpen,
+  onOpenChange,
+  initialMode = "create",
+  initialRegisterKey,
 }: AddDeviceDialogProps) {
-  const [open, setOpen] = useState(false);
-  const [mode, setMode] = useState<Mode>("create");
+  const isControlled = controlledOpen !== undefined;
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = isControlled ? controlledOpen : internalOpen;
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [pending, startTransition] = useTransition();
 
   // "Create key" mode.
@@ -129,10 +147,11 @@ export function AddDeviceDialog({
   }
 
   function handleOpenChange(next: boolean) {
-    setOpen(next);
+    if (isControlled) onOpenChange?.(next);
+    else setInternalOpen(next);
     if (!next) {
       reset();
-      setMode("create");
+      setMode(initialMode);
     }
   }
 
@@ -176,14 +195,16 @@ export function AddDeviceDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>
-        {trigger ?? (
-          <Button variant="solid" size="sm">
-            <LaptopMinimal className="h-4 w-4" aria-hidden />
-            Add device
-          </Button>
-        )}
-      </DialogTrigger>
+      {!isControlled && (
+        <DialogTrigger asChild>
+          {trigger ?? (
+            <Button variant="solid" size="sm">
+              <LaptopMinimal className="h-4 w-4" aria-hidden />
+              Add device
+            </Button>
+          )}
+        </DialogTrigger>
+      )}
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
@@ -388,6 +409,7 @@ export function AddDeviceDialog({
                   id="add-device-register-key"
                   name="key"
                   mono
+                  defaultValue={initialRegisterKey}
                   placeholder="Paste the registration key"
                   autoComplete="off"
                   spellCheck={false}

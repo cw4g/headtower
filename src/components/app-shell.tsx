@@ -1,7 +1,9 @@
 import * as React from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { BeaconMark } from "@/components/beacon-mark";
 import { ConsoleSidebar } from "@/components/console-sidebar";
+import { MobileNavDrawer } from "@/components/mobile-nav-drawer";
 import { ToastViewport } from "@/components/ui/toast";
 import type { Account } from "@/components/account-menu";
 import { getSession } from "@/lib/auth";
@@ -74,7 +76,17 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
         updateAvailable={update.available}
         latestVersion={update.latestVersion}
       />
-      <main className="grid-field relative min-w-0 flex-1 overflow-y-auto">
+      <main className="grid-field relative flex min-w-0 flex-1 flex-col overflow-y-auto">
+        {/* Mobile header: the icon rail alongside has no room for labels below
+            `md`, and its tooltips need hover, which touch can't give it. This
+            hamburger opens `MobileNavDrawer`, the full-label equivalent. */}
+        <div className="sticky top-0 z-30 flex h-12 shrink-0 items-center gap-3 border-b border-line bg-surface px-4 md:hidden">
+          <MobileNavDrawer />
+          <span className="flex items-center gap-2 text-sm font-semibold tracking-tight text-ink">
+            <BeaconMark className="h-5 w-5 shrink-0" />
+            head<span className="text-ink-muted">tower</span>
+          </span>
+        </div>
         <div className="relative mx-auto w-full max-w-[1400px] px-4 py-6">
           {children}
         </div>

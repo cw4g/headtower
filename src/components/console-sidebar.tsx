@@ -3,52 +3,18 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  ArrowUpCircle,
-  Globe,
-  LayoutDashboard,
-  Route,
-  ScrollText,
-  Search,
-  Server,
-  Settings,
-  Shield,
-  Users,
-  type LucideIcon,
-} from "lucide-react";
+import { ArrowUpCircle, Search } from "lucide-react";
 import { BeaconMark } from "@/components/beacon-mark";
 import { AccountMenu, type Account } from "@/components/account-menu";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Kbd } from "@/components/ui/kbd";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { Theme } from "@/lib/theme";
-import { persistSidebarCollapsed } from "@/lib/sidebar";
+import { NAV, isNavActive, persistSidebarCollapsed, type NavItem } from "@/lib/sidebar";
 import { cn } from "@/lib/cn";
-
-interface NavItem {
-  label: string;
-  href: string;
-  icon: LucideIcon;
-}
-
-/** Primary console nav. The palette can also jump to any of these. */
-const NAV: NavItem[] = [
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Machines", href: "/machines", icon: Server },
-  { label: "Users", href: "/users", icon: Users },
-  { label: "Access", href: "/access", icon: Shield },
-  { label: "Routes", href: "/routes", icon: Route },
-  { label: "DNS", href: "/dns", icon: Globe },
-  { label: "Audit", href: "/audit", icon: ScrollText },
-  { label: "Settings", href: "/settings", icon: Settings },
-];
 
 /** Custom event the command palette listens for. */
 export const COMMAND_EVENT = "headtower:command";
-
-function isActive(pathname: string, href: string) {
-  return pathname === href || pathname.startsWith(href + "/");
-}
 
 /**
  * The operator-console left rail. A collapsible sidebar: the beacon logo at the
@@ -142,7 +108,7 @@ export function ConsoleSidebar({
           <NavLink
             key={item.href}
             item={item}
-            active={isActive(pathname, item.href)}
+            active={isNavActive(pathname, item.href)}
             collapsed={collapsed}
           />
         ))}

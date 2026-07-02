@@ -1,6 +1,11 @@
 import { cookies } from "next/headers";
 import { Server } from "lucide-react";
-import { nodes as nodesApi, users as usersApi } from "@/lib/headscale";
+import {
+  nodes as nodesApi,
+  users as usersApi,
+  policy as policyApi,
+} from "@/lib/headscale";
+import { parsePolicy } from "@/lib/policy";
 import { getAgentPeers } from "@/lib/agent";
 import { withoutAgentNodes } from "@/lib/agent-node";
 import { sessionCan } from "@/lib/authz";
@@ -22,6 +27,7 @@ import {
   AddDeviceDialog,
   type UserOption,
 } from "@/components/machines/add-device-dialog-lazy";
+import { AddDeviceDeepLink } from "@/components/machines/add-device-deep-link";
 
 // The console reports live tailnet state; never prebuild this view.
 export const dynamic = "force-dynamic";
@@ -82,6 +88,9 @@ export default async function MachinesPage() {
   // server round trip), so it needs the login-server URL before the operator
   // ever submits anything, not just after `createDeviceKey` returns one.
   const loginServerUrl = getConfig().headscale?.loginServerUrl ?? "";
+  // Tag suggestions for the Edit tags dialog: every tag already in use across
+  // the tailnet, plus the tagOwners keys declared in the ACL policy.
+  const knownTags = error ? [] : await collectKnownTags(views);
 
   return (
     <div className="flex flex-col gap-6">
@@ -96,13 +105,29 @@ export default async function MachinesPage() {
         )}
       </SectionHeading>
 
+      {/* Enrolment deep-link handler: opens the Add device dialog from the
+          `?add=1` / `?register=<key>` flags the command palette emits, then
+          strips the flag from the URL. Only mounts the (lazy) dialog on demand. */}
+      {canAddDevice && (
+        <AddDeviceDeepLink users={userOptions} loginServerUrl={loginServerUrl} />
+      )}
+
       {error ? (
         <ConnectionError error={error} />
       ) : views && views.length > 0 ? (
         view === "cards" ? (
-          <MachinesCards nodes={views} nowMs={now} canManage={canManage} />
+          <MachinesCards
+            nodes={views}
+            nowMs={now}
+            canManage={canManage}
+            knownTags={knownTags}
+          />
         ) : (
-          <MachinesTable nodes={views} canManage={canManage} />
+          <MachinesTable
+            nodes={views}
+            canManage={canManage}
+            knownTags={knownTags}
+          />
         )
       ) : (
         <EmptyState
@@ -118,4 +143,28 @@ export default async function MachinesPage() {
       )}
     </div>
   );
+}
+
+/**
+ * Gather the tag suggestions offered in the Edit tags dialog: every tag already
+ * applied to a machine, unioned with the `tagOwners` keys declared in the ACL
+ * policy. The policy read is best-effort - it only succeeds in database policy
+ * mode, so any failure (file mode, unreachable control plane) quietly falls back
+ * to the in-use tags alone. Result is sorted for a stable, scannable order.
+ */
+async function collectKnownTags(views: NodeView[] | null): Promise<string[]> {
+  const tags = new Set<string>();
+  for (const view of views ?? []) {
+    for (const tag of view.tags) tags.add(tag);
+  }
+  try {
+    const doc = await policyApi.get();
+    const { model } = parsePolicy(doc.policy);
+    for (const owner of model.tagOwners) {
+      if (owner.name.startsWith("tag:")) tags.add(owner.name);
+    }
+  } catch {
+    // Best-effort; in-use tags are enough on their own.
+  }
+  return [...tags].sort();
 }

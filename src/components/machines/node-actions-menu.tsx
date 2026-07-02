@@ -25,6 +25,8 @@ export interface NodeActionsMenuProps {
   nodeId: string;
   name: string;
   tags: string[];
+  /** Tailnet-wide tag suggestions for the Edit tags dialog (optional). */
+  knownTags?: string[];
   /**
    * Where to send the operator after a successful delete. Omit on surfaces
    * that stay put and let the list revalidate in place (the table and card
@@ -46,6 +48,7 @@ export function NodeActionsMenu({
   nodeId,
   name,
   tags,
+  knownTags,
   redirectAfterDelete,
   className,
 }: NodeActionsMenuProps) {
@@ -114,6 +117,7 @@ export function NodeActionsMenu({
         nodeId={nodeId}
         name={name}
         tags={tags}
+        knownTags={knownTags}
         open={open}
         onClose={close}
         redirectAfterDelete={redirectAfterDelete}

@@ -296,6 +296,9 @@ function expiringSoon(
       owner: ownerLabel(view.user),
       detail: `${view.expired ? "expired" : "expires"} ${relativeTime(view.expiry, now)}`,
       expired: view.expired,
+      // Node keys map to a real machine; pre-auth keys below don't get one
+      // since there's no per-key detail route to send them to.
+      href: `/machines/${view.id}`,
       time: t,
     });
   }
@@ -384,15 +387,18 @@ function Stat({
   dot = false,
   trend,
   trendTone = "beacon",
+  href,
 }: {
   label: string;
   value: React.ReactNode;
   dot?: boolean;
   trend?: number[];
   trendTone?: ChartTone;
+  /** When set, the whole tile deep-links to the matching pre-filtered view. */
+  href?: string;
 }) {
-  return (
-    <div className="flex flex-col gap-1.5 px-4 py-4 sm:px-6 sm:py-5">
+  const body = (
+    <>
       <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.14em] text-ink-faint">
         {dot && (
           <span
@@ -401,6 +407,12 @@ function Stat({
           />
         )}
         {label}
+        {href && (
+          <ArrowRight
+            className="h-3 w-3 shrink-0 text-ink-faint opacity-0 transition-opacity group-hover:opacity-100"
+            aria-hidden
+          />
+        )}
       </span>
       <span className="data text-2xl font-semibold tabular-nums text-ink sm:text-[2.5rem] sm:leading-none">
         {value}
@@ -414,8 +426,21 @@ function Stat({
           className="mt-1.5 h-5 opacity-70"
         />
       )}
-    </div>
+    </>
   );
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className="group flex flex-col gap-1.5 px-4 py-4 transition-colors hover:bg-surface-2/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-beacon-500/40 sm:px-6 sm:py-5"
+      >
+        {body}
+      </Link>
+    );
+  }
+
+  return <div className="flex flex-col gap-1.5 px-4 py-4 sm:px-6 sm:py-5">{body}</div>;
 }
 
 function ErrorState({ message }: { message: string }) {
@@ -562,15 +587,21 @@ export default async function DashboardPage() {
             Tailnet coverage
           </span>
           <div className="flex items-center gap-4">
-            <span className="flex items-center gap-1.5 text-xs text-ink-muted">
+            <Link
+              href="/machines?status=online"
+              className="flex items-center gap-1.5 text-xs text-ink-muted transition-colors hover:text-ink"
+            >
               <span
                 className="inline-block h-2 w-2 rounded-full bg-online-500"
                 aria-hidden
               />
               <span className="data tabular-nums text-ink">{onlineCount}</span>
               online
-            </span>
-            <span className="flex items-center gap-1.5 text-xs text-ink-muted">
+            </Link>
+            <Link
+              href="/machines?status=offline"
+              className="flex items-center gap-1.5 text-xs text-ink-muted transition-colors hover:text-ink"
+            >
               <span
                 className="inline-block h-2 w-2 rounded-full border border-ink-faint"
                 aria-hidden
@@ -579,7 +610,7 @@ export default async function DashboardPage() {
                 {total - onlineCount}
               </span>
               offline
-            </span>
+            </Link>
           </div>
         </div>
 
@@ -588,10 +619,23 @@ export default async function DashboardPage() {
 
       {/* Compact readout strip — instrument figures, not stat cards. */}
       <Surface className="grid grid-cols-2 divide-x divide-y divide-line sm:grid-cols-4 sm:divide-y-0">
-        <Stat label="Devices" value={total} trend={hasTrend ? totalTrend : undefined} trendTone="neutral" />
-        <Stat label="Online" value={onlineCount} dot trend={hasTrend ? onlineTrend : undefined} trendTone="online" />
-        <Stat label="Users" value={users.length} />
-        <Stat label="Routes" value={routeCount} />
+        <Stat
+          label="Devices"
+          value={total}
+          href="/machines"
+          trend={hasTrend ? totalTrend : undefined}
+          trendTone="neutral"
+        />
+        <Stat
+          label="Online"
+          value={onlineCount}
+          dot
+          href="/machines?status=online"
+          trend={hasTrend ? onlineTrend : undefined}
+          trendTone="online"
+        />
+        <Stat label="Users" value={users.length} href="/users" />
+        <Stat label="Routes" value={routeCount} href="/routes" />
       </Surface>
 
       {/* Agent sidecar: health readout + on/off, independent of tailnet size. */}
@@ -631,14 +675,40 @@ export default async function DashboardPage() {
               )}
             </Widget>
 
-            <Widget label="Connectivity" bodyClassName="items-center justify-center">
+            <Widget label="Connectivity" bodyClassName="items-center justify-center gap-4">
               <Donut
                 data={connectivity}
                 size={148}
                 centerValue={total}
                 centerLabel="devices"
+                legend={false}
                 aria-label={`Connectivity: ${onlineCount} online, ${total - onlineCount} offline`}
               />
+              {/* Own legend, in place of Donut's, so each segment deep-links
+                  to its slice of the machines list. */}
+              <ul className="flex min-w-0 flex-col gap-1.5">
+                {connectivity.map((slice) => (
+                  <li key={slice.label}>
+                    <Link
+                      href={`/machines?status=${slice.label === "Online" ? "online" : "offline"}`}
+                      className="flex items-center gap-2 rounded-control px-1.5 py-1 text-xs transition-colors hover:bg-surface-2/60"
+                    >
+                      <span
+                        className={cn(
+                          "h-2 w-2 shrink-0 rounded-[2px]",
+                          slice.tone === "online" ? "bg-online-500" : "bg-ink/50",
+                        )}
+                        aria-hidden
+                      />
+                      <span className="truncate text-ink-muted">{slice.label}</span>
+                      <span className="data ml-auto pl-3 text-ink">{slice.value}</span>
+                      <span className="data w-9 text-right text-ink-faint">
+                        {total > 0 ? `${Math.round((slice.value / total) * 100)}%` : "—"}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
             </Widget>
 
             <Widget label={platforms.title} bodyClassName="items-center justify-center">
@@ -738,28 +808,30 @@ export default async function DashboardPage() {
               <Card>
                 <ul>
                   {shown.map((item) => (
-                    <li
-                      key={item.id}
-                      className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 last:border-0"
-                    >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <StatusDot
-                          status={item.status === "critical" ? "critical" : "warn"}
-                        />
-                        <div className="min-w-0">
-                          <div className="data truncate text-sm text-ink">
-                            {item.name}
-                          </div>
-                          <div className="truncate text-xs text-ink-faint">
-                            {item.user} · {item.detail}
+                    <li key={item.id} className="border-b border-line last:border-0">
+                      <Link
+                        href={`/machines/${item.id}`}
+                        className="flex items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-surface-2/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-beacon-500/40"
+                      >
+                        <div className="flex min-w-0 items-center gap-3">
+                          <StatusDot
+                            status={item.status === "critical" ? "critical" : "warn"}
+                          />
+                          <div className="min-w-0">
+                            <div className="data truncate text-sm text-ink">
+                              {item.name}
+                            </div>
+                            <div className="truncate text-xs text-ink-faint">
+                              {item.user} · {item.detail}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      <Chip
-                        variant={item.status === "critical" ? "critical" : "warn"}
-                      >
-                        {item.reason}
-                      </Chip>
+                        <Chip
+                          variant={item.status === "critical" ? "critical" : "warn"}
+                        >
+                          {item.reason}
+                        </Chip>
+                      </Link>
                     </li>
                   ))}
                 </ul>

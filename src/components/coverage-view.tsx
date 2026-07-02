@@ -10,6 +10,7 @@
  * a patch panel. Server-rendered, colours driven entirely by design tokens.
  */
 import * as React from "react";
+import Link from "next/link";
 import {
   Apple,
   AppWindow,
@@ -138,13 +139,15 @@ function BranchTick({ active }: { active: boolean }) {
  * One device: its wire back into the lane, then the device itself - the
  * lane's OS icon (a real computer/phone shape, not an abstract dot), with a
  * small corner status light for online/offline, and a truncated mono label.
+ * The whole marker deep-links to the machine's detail page.
  */
 function NodeMarker({ point, icon: Icon }: { point: CoveragePoint; icon: LucideIcon }) {
   const status = point.online ? "online" : "offline";
   return (
-    <span
+    <Link
+      href={`/machines/${point.id}`}
       title={`${point.label} · ${status}`}
-      className="group inline-flex min-w-0 items-center gap-1.5"
+      className="group -mx-1 -my-0.5 inline-flex min-w-0 items-center gap-1.5 rounded-control px-1 py-0.5 transition-colors hover:bg-surface-2/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beacon-500/40"
     >
       <svg width={12} height={14} viewBox="0 0 12 14" className="shrink-0 overflow-visible">
         <line
@@ -177,7 +180,7 @@ function NodeMarker({ point, icon: Icon }: { point: CoveragePoint; icon: LucideI
       <span className="data max-w-[8rem] truncate text-xs text-ink-muted transition-colors group-hover:text-ink sm:max-w-[10rem]">
         {point.label}
       </span>
-    </span>
+    </Link>
   );
 }
 

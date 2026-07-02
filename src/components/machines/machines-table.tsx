@@ -55,6 +55,7 @@ function edgeStatus(
 export function MachinesTable({
   nodes,
   canManage = false,
+  knownTags,
 }: {
   nodes: NodeView[];
   /**
@@ -63,6 +64,8 @@ export function MachinesTable({
    * page, matching how the node detail page gates its own Actions card.
    */
   canManage?: boolean;
+  /** Tailnet-wide tag suggestions for each row's Edit tags dialog. */
+  knownTags?: string[];
 }) {
   const router = useRouter();
   const filter = useMachinesFilter(nodes);
@@ -213,6 +216,7 @@ export function MachinesTable({
                   key={node.id}
                   node={node}
                   canManage={canManage}
+                  knownTags={knownTags}
                   selected={selected.has(node.id)}
                   onToggle={(shiftKey) => toggleRow(node.id, index, shiftKey)}
                   onOpen={() => router.push(`/machines/${node.id}`)}
@@ -237,12 +241,14 @@ export function MachinesTable({
 function MachineRow({
   node,
   canManage,
+  knownTags,
   selected,
   onToggle,
   onOpen,
 }: {
   node: NodeView;
   canManage: boolean;
+  knownTags?: string[];
   selected: boolean;
   onToggle: (shiftKey: boolean) => void;
   onOpen: () => void;
@@ -432,6 +438,7 @@ function MachineRow({
             nodeId={node.id}
             name={node.name}
             tags={node.tags}
+            knownTags={knownTags}
             className="ml-auto opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100"
           />
         </Td>

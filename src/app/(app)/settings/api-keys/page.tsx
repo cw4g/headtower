@@ -150,13 +150,8 @@ function ApiKeyRow({
 
       <Td className="pr-4 text-right">
         <div className="flex justify-end">
-          {current ? (
-            // The session's own key has no destructive controls, by design.
-            <span className="pr-1 text-xs text-ink-faint" title="Protected: in use by Headtower">
-              protected
-            </span>
-          ) : canManage ? (
-            <ApiKeyActions prefix={entry.prefix} expired={expired} />
+          {canManage ? (
+            <ApiKeyActions prefix={entry.prefix} expired={expired} isSelf={current} />
           ) : (
             <span className="pr-1 text-xs text-ink-faint">—</span>
           )}

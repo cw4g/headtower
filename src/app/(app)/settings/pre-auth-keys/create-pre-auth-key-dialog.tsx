@@ -2,8 +2,10 @@
 
 import * as React from "react";
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { KeyRound, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CopyButton } from "@/components/ui/copy-button";
 import {
   Dialog,
   DialogBody,
@@ -36,6 +38,12 @@ export interface UserOption {
 export interface CreatePreAuthKeyDialogProps {
   users: UserOption[];
   trigger?: React.ReactNode;
+  /**
+   * Public login-server URL from Settings > Connection ("" or unset when none).
+   * Used to build a ready-to-paste `tailscale up` command beside the minted key;
+   * when absent it falls back to a `<your-headscale-url>` placeholder.
+   */
+  loginServerUrl?: string;
 }
 
 /**
@@ -46,6 +54,7 @@ export interface CreatePreAuthKeyDialogProps {
 export function CreatePreAuthKeyDialog({
   users,
   trigger,
+  loginServerUrl,
 }: CreatePreAuthKeyDialogProps) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -104,6 +113,12 @@ export function CreatePreAuthKeyDialog({
           <>
             <DialogBody className="flex flex-col gap-3">
               <SecretReveal value={createdKey} />
+              <EnrolCommand loginServerUrl={loginServerUrl} authKey={createdKey} />
+              <p className="flex items-start gap-1.5 text-xs text-ink-faint">
+                <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                Keys are shown once — copy it now, it can&apos;t be retrieved
+                again.
+              </p>
             </DialogBody>
             <DialogFooter>
               <DialogClose asChild>
@@ -201,6 +216,67 @@ export function CreatePreAuthKeyDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+/**
+ * Ready-to-paste `tailscale up` command built around the minted key (the
+ * Headplane show-secret-once pattern). When no public login-server URL is
+ * configured, it renders a `<your-headscale-url>` placeholder and points at the
+ * setting that fixes it, so the command is still copyable and self-explanatory.
+ */
+function EnrolCommand({
+  loginServerUrl,
+  authKey,
+}: {
+  loginServerUrl?: string;
+  authKey: string;
+}) {
+  const internal = looksInternal(loginServerUrl);
+  const server = internal ? "<your-headscale-url>" : (loginServerUrl as string);
+  const command = `tailscale up --login-server ${server} --authkey ${authKey}`;
+
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-faint">
+        Enrolment command
+      </span>
+      <div className="flex items-start gap-2 rounded-control border border-line-strong bg-surface-2 p-3">
+        <code className="data min-w-0 flex-1 break-all text-xs leading-relaxed text-ink">
+          {command}
+        </code>
+        <CopyButton value={command} label="Copy command" className="mt-0.5" />
+      </div>
+      {internal && (
+        <p className="text-xs text-ink-faint">
+          No public login-server URL is set, so the placeholder above needs a
+          manual swap. Set one in{" "}
+          <Link
+            href="/settings/connection"
+            className="text-beacon-500 transition-colors hover:text-beacon-400"
+          >
+            Settings &gt; Connection
+          </Link>{" "}
+          for a ready-to-paste command next time.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// Hosts that only resolve inside the deploy's own network - a `tailscale up`
+// command built from one means nothing off-box, so we swap in a placeholder.
+function looksInternal(url?: string): boolean {
+  if (!url) return true;
+  try {
+    const { hostname } = new URL(url);
+    return (
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname.endsWith(".docker.internal")
+    );
+  } catch {
+    return true;
+  }
 }
 
 function CheckRow({

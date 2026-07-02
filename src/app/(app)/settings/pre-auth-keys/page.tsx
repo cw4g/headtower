@@ -11,10 +11,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { describeHeadscaleError } from "../errors";
 import { nowMs } from "../format";
 import { SettingsError } from "../settings-error";
-import {
-  CreatePreAuthKeyDialog,
-  type UserOption,
-} from "./create-pre-auth-key-dialog";
+import { CreatePreAuthKeyFlag } from "./create-pre-auth-key-flag";
+import type { UserOption } from "./create-pre-auth-key-dialog";
 import { PreAuthKeysTable } from "./pre-auth-keys-table";
 
 // Pre-auth keys are live control-plane state; never prebuild this view.
@@ -41,7 +39,15 @@ async function loadPreAuthKeys(): Promise<PreAuthKeysData> {
   return { users, keys };
 }
 
-export default async function PreAuthKeysPage() {
+export default async function PreAuthKeysPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  // The command palette's "Create pre-auth key" quick action lands here with
+  // `?create=1`; `CreatePreAuthKeyFlag` auto-opens the dialog and strips it.
+  const wantsCreate = (await searchParams).create === "1";
+
   let data: PreAuthKeysData | null = null;
   let error: string | null = null;
   try {
@@ -74,7 +80,7 @@ export default async function PreAuthKeysPage() {
           </p>
         </div>
         {!error && hasUsers && keys.length > 0 && canManage && (
-          <CreatePreAuthKeyDialog users={userOptions} />
+          <CreatePreAuthKeyFlag users={userOptions} autoOpen={wantsCreate} />
         )}
       </div>
 
@@ -104,7 +110,9 @@ export default async function PreAuthKeysPage() {
           title="No pre-auth keys"
           description="Mint a key to enrol nodes non-interactively with `tailscale up --authkey`."
           action={
-            canManage ? <CreatePreAuthKeyDialog users={userOptions} /> : undefined
+            canManage ? (
+              <CreatePreAuthKeyFlag users={userOptions} autoOpen={wantsCreate} />
+            ) : undefined
           }
         />
       ) : (

@@ -41,6 +41,7 @@ export function NodeActionDialogs({
   nodeId,
   name,
   tags,
+  knownTags,
   open,
   onClose,
   redirectAfterDelete,
@@ -48,6 +49,13 @@ export function NodeActionDialogs({
   nodeId: string;
   name: string;
   tags: string[];
+  /**
+   * Tags already in use across the tailnet (other machines) plus `tagOwners`
+   * keys from the ACL policy, surfaced as suggestion chips in the Edit tags
+   * dialog. Optional: surfaces that can't cheaply gather them (the detail page)
+   * omit it and the dialog just shows no suggestions.
+   */
+  knownTags?: string[];
   open: ActionKind;
   onClose: () => void;
   redirectAfterDelete?: string;
@@ -75,7 +83,13 @@ export function NodeActionDialogs({
       >
         <DialogContent>
           {open === "tags" && (
-            <TagsForm nodeId={nodeId} name={name} tags={tags} onDone={onClose} />
+            <TagsForm
+              nodeId={nodeId}
+              name={name}
+              tags={tags}
+              knownTags={knownTags}
+              onDone={onClose}
+            />
           )}
         </DialogContent>
       </Dialog>
@@ -222,18 +236,32 @@ function TagsForm({
   nodeId,
   name,
   tags,
+  knownTags,
   onDone,
-}: FormProps & { name: string; tags: string[] }) {
+}: FormProps & { name: string; tags: string[]; knownTags?: string[] }) {
   const [current, setCurrent] = React.useState<string[]>(tags);
   const [draft, setDraft] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [pending, startTransition] = React.useTransition();
+
+  // Suggestions the operator hasn't already applied, normalised and deduped.
+  const suggestions = React.useMemo(() => {
+    const applied = new Set(current);
+    return mergeTags(parseTags((knownTags ?? []).join(" "))).filter(
+      (tag) => !applied.has(tag),
+    );
+  }, [knownTags, current]);
 
   function commitDraft() {
     const parsed = parseTags(draft);
     if (parsed.length === 0) return;
     setCurrent((prev) => mergeTags(prev, parsed));
     setDraft("");
+  }
+
+  function addTag(tag: string) {
+    setCurrent((prev) => mergeTags(prev, [tag]));
+    if (error) setError(null);
   }
 
   function removeTag(tag: string) {
@@ -306,6 +334,26 @@ function TagsForm({
               disabled={pending}
             />
           </Field>
+          {suggestions.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-faint">
+                Suggested
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {suggestions.map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => addTag(tag)}
+                    disabled={pending}
+                    className="data inline-flex items-center rounded-[0.3rem] border border-line bg-surface py-0.5 px-1.5 text-xs text-ink-muted transition-colors hover:border-line-strong hover:bg-surface-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beacon-500/40 disabled:pointer-events-none disabled:opacity-50"
+                  >
+                    + {tag}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </DialogBody>
         {error && <DialogError>{error}</DialogError>}
         <DialogFooter>

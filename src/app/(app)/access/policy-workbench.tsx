@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
-import { cn } from "@/lib/cn";
+import { SegmentedTabs, type SegmentedOption } from "@/components/ui/segmented";
 import {
   parsePolicy,
   serializePolicy,
@@ -38,6 +38,11 @@ interface PolicyWorkbenchProps {
 type Tab = "visual" | "json";
 
 const PARSE_FALLBACK = "This document isn't valid HuJSON yet.";
+
+const TAB_OPTIONS: SegmentedOption<Tab>[] = [
+  { value: "visual", label: "Visual", icon: LayoutPanelLeft },
+  { value: "json", label: "JSON", icon: Braces },
+];
 
 /**
  * The Access workbench: a schematic console hosting two synced views of one
@@ -141,22 +146,12 @@ export function PolicyWorkbench({
       {/* Console bar: tab switch + validity on the left, save state on the right. */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-surface-2/60 px-3 py-2.5">
         <div className="flex items-center gap-3">
-          <div
-            role="tablist"
-            aria-label="Policy editor view"
-            className="inline-flex items-center gap-0.5 rounded-control border border-line-strong bg-surface-2 p-0.5"
-          >
-            <TabButton
-              icon={LayoutPanelLeft}
-              active={tab === "visual"}
-              onClick={selectVisual}
-            >
-              Visual
-            </TabButton>
-            <TabButton icon={Braces} active={tab === "json"} onClick={selectJson}>
-              JSON
-            </TabButton>
-          </div>
+          <SegmentedTabs
+            options={TAB_OPTIONS}
+            value={tab}
+            onValueChange={(next) => (next === "visual" ? selectVisual() : selectJson())}
+            ariaLabel="Policy editor view"
+          />
           <ValidityBadge validity={validity} />
         </div>
         <div className="flex items-center gap-3">
@@ -221,36 +216,6 @@ export function PolicyWorkbench({
         </div>
       </div>
     </div>
-  );
-}
-
-function TabButton({
-  icon: Icon,
-  active,
-  onClick,
-  children,
-}: {
-  icon: typeof Braces;
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active}
-      onClick={onClick}
-      className={cn(
-        "inline-flex h-7 items-center gap-1.5 rounded-[0.4rem] border px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beacon-500/40",
-        active
-          ? "border-line bg-surface text-ink shadow-sm"
-          : "border-transparent text-ink-muted hover:text-ink",
-      )}
-    >
-      <Icon className="h-3.5 w-3.5" aria-hidden />
-      {children}
-    </button>
   );
 }
 

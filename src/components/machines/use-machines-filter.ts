@@ -33,6 +33,10 @@ export interface MachinesFilter {
   active: boolean;
   setQuery: (query: string) => void;
   setStatus: (status: StatusFilter) => void;
+  /** Drop (or set) the `?user=` owner scope; `null` clears it. */
+  setUser: (user: string | null) => void;
+  /** Drop (or set) the `?tag=` scope; `null` clears it. */
+  setTag: (tag: string | null) => void;
   clear: () => void;
 }
 
@@ -158,6 +162,14 @@ export function useMachinesFilter(nodes: NodeView[]): MachinesFilter {
     (status: StatusFilter) => setState((s) => ({ ...s, status })),
     [],
   );
+  const setUser = React.useCallback(
+    (user: string | null) => setState((s) => ({ ...s, user })),
+    [],
+  );
+  const setTag = React.useCallback(
+    (tag: string | null) => setState((s) => ({ ...s, tag })),
+    [],
+  );
   const clear = React.useCallback(
     () => setState({ query: "", status: "all", user: null, tag: null }),
     [],
@@ -175,6 +187,8 @@ export function useMachinesFilter(nodes: NodeView[]): MachinesFilter {
     active,
     setQuery,
     setStatus,
+    setUser,
+    setTag,
     clear,
   };
 }

@@ -37,6 +37,30 @@ interface VisualEditorProps {
   onChange: (next: PolicyModel) => void;
 }
 
+/** Every `autogroup:*` token already referenced anywhere in the model, deduped. */
+function collectAutogroups(model: PolicyModel): string[] {
+  const found = new Set<string>();
+  const scan = (values: string[]) => {
+    for (const value of values) {
+      if (value.startsWith("autogroup:")) found.add(value);
+    }
+  };
+  for (const rule of model.acls) {
+    scan(rule.src);
+    scan(rule.dst);
+  }
+  for (const rule of model.ssh) {
+    scan(rule.src);
+    scan(rule.dst);
+    scan(rule.users);
+  }
+  for (const group of model.groups) scan(group.values);
+  for (const tag of model.tagOwners) scan(tag.values);
+  for (const route of model.autoApprovers.routes) scan(route.values);
+  scan(model.autoApprovers.exitNode);
+  return [...found];
+}
+
 /**
  * The visual policy builder: each standard HuJSON section rendered as an
  * editable, schematic panel. Every edit produces a fresh model that the
@@ -45,6 +69,31 @@ interface VisualEditorProps {
  * keys and fields ride along untouched on the model's `root` / rule `raw`.
  */
 export function VisualEditor({ model, onChange }: VisualEditorProps) {
+  // --- Autocomplete suggestions, fed from the model's own definitions ------
+  const groupNames = React.useMemo(
+    () => model.groups.map((g) => g.name).filter(Boolean),
+    [model.groups],
+  );
+  const tagNames = React.useMemo(
+    () => model.tagOwners.map((t) => t.name).filter(Boolean),
+    [model.tagOwners],
+  );
+  const hostNames = React.useMemo(
+    () => model.hosts.map((h) => h.name).filter(Boolean),
+    [model.hosts],
+  );
+  const autogroups = React.useMemo(() => collectAutogroups(model), [model]);
+  // src/dst: any reference a rule can name - hosts, groups, tags, the wildcard,
+  // plus whichever autogroup: forms are already in use.
+  const srcDstSuggestions = React.useMemo(
+    () => [...hostNames, ...groupNames, ...tagNames, "*", ...autogroups],
+    [hostNames, groupNames, tagNames, autogroups],
+  );
+  // Group-ref fields (SSH users, tag owners): groups plus autogroup: forms.
+  const groupRefSuggestions = React.useMemo(
+    () => [...groupNames, ...autogroups],
+    [groupNames, autogroups],
+  );
   // --- Access rules (acls) -------------------------------------------------
   const setAcls = (acls: AclRule[]) => onChange({ ...model, acls });
   const addAcl = () =>
@@ -143,6 +192,7 @@ export function VisualEditor({ model, onChange }: VisualEditorProps) {
                   values={rule.src}
                   onChange={(src) => patchAcl(i, { src })}
                   placeholder="group:eng, tag:ci, 100.64.0.0/10"
+                  suggestions={srcDstSuggestions}
                 />
               </Field>
               <Field label="Destination">
@@ -151,6 +201,7 @@ export function VisualEditor({ model, onChange }: VisualEditorProps) {
                   values={rule.dst}
                   onChange={(dst) => patchAcl(i, { dst })}
                   placeholder="tag:prod:22,443, *:*"
+                  suggestions={srcDstSuggestions}
                 />
               </Field>
             </div>
@@ -196,6 +247,7 @@ export function VisualEditor({ model, onChange }: VisualEditorProps) {
                   values={rule.src}
                   onChange={(src) => patchSsh(i, { src })}
                   placeholder="group:admins, tag:bastion"
+                  suggestions={srcDstSuggestions}
                 />
               </Field>
               <Field label="Destination">
@@ -204,6 +256,7 @@ export function VisualEditor({ model, onChange }: VisualEditorProps) {
                   values={rule.dst}
                   onChange={(dst) => patchSsh(i, { dst })}
                   placeholder="tag:prod, autogroup:self"
+                  suggestions={srcDstSuggestions}
                 />
               </Field>
               <Field
@@ -216,6 +269,7 @@ export function VisualEditor({ model, onChange }: VisualEditorProps) {
                   values={rule.users}
                   onChange={(users) => patchSsh(i, { users })}
                   placeholder="root, ubuntu"
+                  suggestions={groupRefSuggestions}
                 />
               </Field>
             </div>
@@ -288,6 +342,7 @@ export function VisualEditor({ model, onChange }: VisualEditorProps) {
                   values={tag.values}
                   onChange={(values) => patchTagOwner(i, { values })}
                   placeholder="group:ops, alice@example.com"
+                  suggestions={groupRefSuggestions}
                 />
               </Field>
             </div>

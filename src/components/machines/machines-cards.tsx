@@ -36,6 +36,7 @@ export function MachinesCards({
   nodes,
   nowMs,
   canManage = false,
+  knownTags,
 }: {
   nodes: NodeView[];
   nowMs: number;
@@ -45,6 +46,8 @@ export function MachinesCards({
    * from the page, matching how the node detail page gates its own Actions card.
    */
   canManage?: boolean;
+  /** Tailnet-wide tag suggestions for each card's Edit tags dialog. */
+  knownTags?: string[];
 }) {
   const filter = useMachinesFilter(nodes);
   const { filtered, clear } = filter;
@@ -113,6 +116,7 @@ export function MachinesCards({
               node={node}
               nowMs={nowMs}
               canManage={canManage}
+              knownTags={knownTags}
               selected={selected.has(node.id)}
               onToggle={() => toggleCard(node.id)}
             />
@@ -135,12 +139,14 @@ function HostCard({
   node,
   nowMs,
   canManage,
+  knownTags,
   selected,
   onToggle,
 }: {
   node: NodeView;
   nowMs: number;
   canManage: boolean;
+  knownTags?: string[];
   selected: boolean;
   onToggle: () => void;
 }) {
@@ -369,6 +375,7 @@ function HostCard({
           nodeId={node.id}
           name={node.name}
           tags={node.tags}
+          knownTags={knownTags}
           className="absolute right-2.5 top-2.5 bg-surface/80 opacity-0 backdrop-blur-sm transition-opacity duration-150 hover:bg-surface-2 group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100"
         />
       )}

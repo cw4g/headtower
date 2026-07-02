@@ -18,6 +18,8 @@ interface NodeActionsProps {
   nodeId: string;
   name: string;
   tags: string[];
+  /** Tailnet-wide tag suggestions for the Edit tags dialog (optional). */
+  knownTags?: string[];
 }
 
 /**
@@ -26,7 +28,7 @@ interface NodeActionsProps {
  * dialogs; on the detail page the current path dies with the node, so a
  * successful delete redirects to "/machines".
  */
-export function NodeActions({ nodeId, name, tags }: NodeActionsProps) {
+export function NodeActions({ nodeId, name, tags, knownTags }: NodeActionsProps) {
   const [open, setOpen] = React.useState<ActionKind>(null);
   const close = () => setOpen(null);
 
@@ -60,6 +62,7 @@ export function NodeActions({ nodeId, name, tags }: NodeActionsProps) {
         nodeId={nodeId}
         name={name}
         tags={tags}
+        knownTags={knownTags}
         open={open}
         onClose={close}
         redirectAfterDelete="/machines"
