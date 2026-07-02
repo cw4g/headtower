@@ -43,14 +43,18 @@ export interface DonutProps {
  * Quiet monochrome ramp for un-toned slices, beacon leading. Opacity steps of
  * `ink` rather than fixed graphite shades, so every step still contrasts
  * against the `surface-2` track once `ink` itself flips for the theme.
+ *
+ * Steps are validated (CVD-simulated adjacent-pair ΔE ≥ 15 and ≥ 3:1 against
+ * both theme surfaces) — identity is carried by the legend and the slice gaps,
+ * not by hue, so don't add steps without re-checking those two properties.
  */
 const RAMP: { stroke: string; bg: string }[] = [
   { stroke: "stroke-beacon-500", bg: "bg-beacon-500" },
-  { stroke: "stroke-ink/85", bg: "bg-ink/85" },
-  { stroke: "stroke-ink/65", bg: "bg-ink/65" },
+  { stroke: "stroke-ink/90", bg: "bg-ink/90" },
+  { stroke: "stroke-ink/70", bg: "bg-ink/70" },
   { stroke: "stroke-ink/50", bg: "bg-ink/50" },
-  { stroke: "stroke-ink/75", bg: "bg-ink/75" },
-  { stroke: "stroke-ink/40", bg: "bg-ink/40" },
+  { stroke: "stroke-ink/80", bg: "bg-ink/80" },
+  { stroke: "stroke-ink/60", bg: "bg-ink/60" },
 ];
 
 function sliceColor(slice: DonutSlice, i: number): { stroke: string; bg: string } {
@@ -58,8 +62,26 @@ function sliceColor(slice: DonutSlice, i: number): { stroke: string; bg: string 
   return RAMP[i % RAMP.length];
 }
 
+/**
+ * A ramp step never repeats: past the ramp's reach the smallest slices fold
+ * into a single neutral "Other" so two different entities can't wear the same
+ * colour. Toned slices keep their semantic colour and never fold.
+ */
+function foldOverflow(data: DonutSlice[]): DonutSlice[] {
+  const untonedCount = data.filter((d) => !d.tone).length;
+  if (untonedCount <= RAMP.length) return data;
+  const keep = RAMP.length - 1;
+  const untonedSorted = data
+    .filter((d) => !d.tone)
+    .sort((a, b) => b.value - a.value);
+  const folded = new Set(untonedSorted.slice(keep));
+  const other = sum([...folded].map((d) => Math.max(d.value, 0)));
+  const kept = data.filter((d) => !folded.has(d));
+  return [...kept, { label: "Other", value: other, tone: "neutral" }];
+}
+
 export function Donut({
-  data,
+  data: rawData,
   size = 168,
   thickness = 18,
   centerValue,
@@ -68,6 +90,7 @@ export function Donut({
   className,
   "aria-label": ariaLabel,
 }: DonutProps) {
+  const data = foldOverflow(rawData);
   const c = size / 2;
   const radius = c - thickness / 2 - 1;
   const total = sum(data.map((d) => Math.max(d.value, 0)));
@@ -113,27 +136,34 @@ export function Donut({
         />
 
         {total > 0 &&
-          arcs.map(({ slice, i, frac, start, stroke }) => {
-            if (frac <= 0) return null;
-            const pct = frac * 100;
-            return (
-              <circle
-                key={`${slice.label}-${i}`}
-                cx={c}
-                cy={c}
-                r={radius}
-                fill="none"
-                className={stroke}
-                strokeWidth={thickness}
-                strokeLinecap="butt"
-                pathLength={100}
-                strokeDasharray={`${pct} ${100 - pct}`}
-                transform={`rotate(${-90 + start * 360} ${c} ${c})`}
-              >
-                <title>{`${slice.label}: ${slice.value} (${Math.round(pct)}%)`}</title>
-              </circle>
-            );
-          })}
+          (() => {
+            // A hairline of surface between adjacent arcs (~2px of the ~465px
+            // circumference) so neighbouring fills never touch; skipped when a
+            // single slice owns the whole ring.
+            const visible = arcs.filter((a) => a.frac > 0);
+            const gap = visible.length > 1 ? 0.5 : 0;
+            return visible.map(({ slice, i, frac, start, stroke }) => {
+              const pct = frac * 100;
+              const dash = Math.max(pct - gap, 0.4);
+              return (
+                <circle
+                  key={`${slice.label}-${i}`}
+                  cx={c}
+                  cy={c}
+                  r={radius}
+                  fill="none"
+                  className={stroke}
+                  strokeWidth={thickness}
+                  strokeLinecap="butt"
+                  pathLength={100}
+                  strokeDasharray={`${dash} ${100 - dash}`}
+                  transform={`rotate(${-90 + (start + gap / 200) * 360} ${c} ${c})`}
+                >
+                  <title>{`${slice.label}: ${slice.value} (${Math.round(pct)}%)`}</title>
+                </circle>
+              );
+            });
+          })()}
 
         {/* center readout */}
         <text
