@@ -166,7 +166,7 @@ export default async function AccountPage() {
             <EmptyState
               icon={KeySquare}
               title="No personal API keys"
-              description="Mint one to script against your own account. The secret is shown once, at creation."
+              description="Preview: keys can be minted and revoked here, but Headtower does not enforce them yet, so one grants no access. The secret is shown once, at creation."
               action={<CreatePersonalApiKeyDialog />}
             />
           </CardBody>

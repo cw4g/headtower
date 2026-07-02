@@ -78,7 +78,7 @@ export function CreatePersonalApiKeyDialog() {
           <DialogDescription>
             {token
               ? "This is the only time the full key is shown. Copy it now."
-              : "A token scoped to your own account, for scripting against your own data."}
+              : "A token scoped to your own account. Preview: Headtower does not enforce these keys yet, so one grants no access for now."}
           </DialogDescription>
         </DialogHeader>
 
@@ -110,7 +110,7 @@ export function CreatePersonalApiKeyDialog() {
                 label="Name"
                 htmlFor="pak-name"
                 required
-                description={'A label to tell this key apart later, e.g. "laptop CI script".'}
+                description={'A label to tell this key apart later, e.g. "laptop".'}
               >
                 <Input id="pak-name" name="name" required maxLength={80} autoFocus />
               </Field>
