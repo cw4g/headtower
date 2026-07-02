@@ -5,11 +5,14 @@
  * state now lives on each node and approval is per-node, so this module is a
  * thin projection over the `nodes` resource rather than its own REST surface:
  *
- *   list()                  -> route state for every node (from GET /v1/node)
- *   forNode(id)             -> route state for one node (from GET /v1/node/{id})
- *   setApproved(id, routes) -> POST /v1/node/{id}/approve_routes
- *   approve(id, route)      -> approve one additional route on a node
- *   revoke(id, route)       -> remove one route from a node's approved set
+ *   list()                            -> route state for every node (from GET /v1/node)
+ *   forNode(id)                       -> route state for one node (from GET /v1/node/{id})
+ *   setApproved(id, routes)           -> POST /v1/node/{id}/approve_routes
+ *   approve(id, route, approved)      -> approve one additional route on a node
+ *   revoke(id, route, approved)       -> remove one route from a node's approved set
+ *
+ * `approve`/`revoke` take the caller's already-loaded approved set instead of
+ * fetching the node themselves - see the doc comment on `approve` for why.
  *
  * Server-only; see ./client.
  */
@@ -70,21 +73,36 @@ export const routes = {
 
   /**
    * Approve one additional route, preserving the node's existing approvals.
-   * Reads the node first to compute the new set.
+   * Takes `approvedRoutes` from the caller (the page/board already read the
+   * node's route state to render) instead of re-fetching it here.
+   *
+   * LAST-WRITER-WINS: `approve_routes` replaces the node's approved set
+   * wholesale, and there is no compare-and-swap on it, so skipping our own GET
+   * only shrinks the read-modify-write window - it doesn't close it. Two
+   * operators approving different routes on the same node at nearly the same
+   * moment can still race: whichever `approve_routes` call lands second wins
+   * and silently drops the first operator's route from the written set.
    */
-  async approve(id: HeadscaleId | number, route: string): Promise<NodeRoutes> {
-    const node = await nodes.get(id);
-    const next = uniqueSorted([...(node.approvedRoutes ?? []), route]);
+  async approve(
+    id: HeadscaleId | number,
+    route: string,
+    approvedRoutes: string[],
+  ): Promise<NodeRoutes> {
+    const next = uniqueSorted([...approvedRoutes, route]);
     return project(await nodes.approveRoutes(id, next));
   },
 
   /**
-   * Revoke one route from a node's approved set, preserving the rest. Reads the
-   * node first to compute the new set.
+   * Revoke one route from a node's approved set, preserving the rest. Same
+   * caller-supplied-set contract (and the same last-writer-wins race) as
+   * {@link approve}.
    */
-  async revoke(id: HeadscaleId | number, route: string): Promise<NodeRoutes> {
-    const node = await nodes.get(id);
-    const next = (node.approvedRoutes ?? []).filter((r) => r !== route);
+  async revoke(
+    id: HeadscaleId | number,
+    route: string,
+    approvedRoutes: string[],
+  ): Promise<NodeRoutes> {
+    const next = approvedRoutes.filter((r) => r !== route);
     return project(await nodes.approveRoutes(id, next));
   },
 };

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useState, useTransition } from "react";
-import { Ban, MoreHorizontal, TriangleAlert } from "lucide-react";
+import { Ban, MoreHorizontal, Trash2, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,24 +18,29 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { expirePreAuthKey } from "./actions";
+import { deletePreAuthKey, expirePreAuthKey } from "./actions";
 
 export interface PreAuthKeyActionsProps {
   id: string;
-  /** Owning user id (for the legacy expire shape). */
+  /** Owning user id (for the legacy expire shape and the delete audit entry). */
   user: string;
   /** The key secret (for the legacy expire shape). */
   keyValue: string;
-  /** Already-lapsed keys can't be expired again. */
+  /** Already-lapsed keys can't be expired again (but can still be deleted). */
   expired: boolean;
 }
 
+type Mode = "expire" | "delete";
+
 /**
- * Row actions for a pre-auth key: a quiet kebab opening an Expire confirmation.
- * Expire is the only lifecycle op the admin API offers for a key. Expired keys
- * show the menu disabled rather than vanishing, so the column stays aligned.
+ * Row actions for a pre-auth key: a quiet kebab opening an Expire or Delete
+ * confirmation. Expire just stops future enrolments (0.26+); Delete removes
+ * the row from the control plane outright (0.29+, surfaces the version error
+ * inline if the server doesn't support it). Expired keys show Expire disabled
+ * rather than vanishing, so the column stays aligned.
  */
 export function PreAuthKeyActions({
   id,
@@ -43,25 +48,27 @@ export function PreAuthKeyActions({
   keyValue,
   expired,
 }: PreAuthKeyActionsProps) {
-  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [mode, setMode] = useState<Mode | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  function handleConfirmOpenChange(next: boolean) {
-    setConfirmOpen(next);
-    if (!next) setError(null);
+  function close() {
+    setMode(null);
+    setError(null);
   }
 
-  function expire() {
+  function run(action: () => ReturnType<typeof expirePreAuthKey>) {
     startTransition(async () => {
-      const result = await expirePreAuthKey({ id, user, key: keyValue });
+      const result = await action();
       if (result.status === "success") {
-        handleConfirmOpenChange(false);
+        close();
       } else {
         setError(result.error);
       }
     });
   }
+
+  const isDelete = mode === "delete";
 
   return (
     <>
@@ -81,23 +88,47 @@ export function PreAuthKeyActions({
             disabled={expired}
             onSelect={(event) => {
               event.preventDefault();
-              if (!expired) setConfirmOpen(true);
+              if (!expired) setMode("expire");
             }}
           >
             <Ban className="h-4 w-4" aria-hidden />
             Expire key
           </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            destructive
+            onSelect={(event) => {
+              event.preventDefault();
+              setMode("delete");
+            }}
+          >
+            <Trash2 className="h-4 w-4" aria-hidden />
+            Delete key
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <Dialog open={confirmOpen} onOpenChange={handleConfirmOpenChange}>
+      <Dialog open={mode !== null} onOpenChange={(next) => (next ? null : close())}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Expire pre-auth key</DialogTitle>
+            <DialogTitle>
+              {isDelete ? "Delete pre-auth key" : "Expire pre-auth key"}
+            </DialogTitle>
             <DialogDescription>
-              Key <span className="data text-ink-faint">#{id}</span> stops
-              enrolling nodes immediately. Nodes already registered with it stay
-              connected. This can&apos;t be undone.
+              {isDelete ? (
+                <>
+                  Permanently remove key{" "}
+                  <span className="data text-ink-faint">#{id}</span> from the
+                  control plane. Nodes already enrolled with it stay connected.
+                  This can&apos;t be undone.
+                </>
+              ) : (
+                <>
+                  Key <span className="data text-ink-faint">#{id}</span> stops
+                  enrolling nodes immediately. Nodes already registered with it
+                  stay connected. This can&apos;t be undone.
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
           {error && (
@@ -114,15 +145,26 @@ export function PreAuthKeyActions({
                 Cancel
               </Button>
             </DialogClose>
-            <Button
-              variant="outline"
-              size="sm"
-              className="border-warn-500/50 text-warn-500 hover:bg-warn-500/10"
-              disabled={pending}
-              onClick={expire}
-            >
-              {pending ? "Expiring…" : "Expire key"}
-            </Button>
+            {isDelete ? (
+              <Button
+                variant="danger"
+                size="sm"
+                disabled={pending}
+                onClick={() => run(() => deletePreAuthKey({ id, user }))}
+              >
+                {pending ? "Deleting…" : "Delete key"}
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-warn-500/50 text-warn-500 hover:bg-warn-500/10"
+                disabled={pending}
+                onClick={() => run(() => expirePreAuthKey({ id, user, key: keyValue }))}
+              >
+                {pending ? "Expiring…" : "Expire key"}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

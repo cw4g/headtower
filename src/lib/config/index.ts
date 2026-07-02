@@ -33,6 +33,7 @@
  * import it into a client component.
  */
 
+import { cache } from "react";
 import {
   createCipheriv,
   createDecipheriv,
@@ -192,12 +193,20 @@ export function decodeSecret(stored: string): string | null {
 /**
  * Read, merge, and return the effective Headtower configuration.
  *
- * DB `app_settings` override the env bootstrap per field. Never cached: a value
- * set through the UI must take effect on the very next call, so the (cheap,
- * synchronous) DB read runs every time. Malformed values are treated as "absent"
- * rather than fatal, so a bad setting routes to /setup instead of crashing.
+ * DB `app_settings` override the env bootstrap per field. Malformed values are
+ * treated as "absent" rather than fatal, so a bad setting routes to /setup
+ * instead of crashing.
+ *
+ * Memoized per request with React `cache()`: a dashboard render calls this
+ * 15-20x (Headscale client, auth, RBAC), but the table scan + secret decryption
+ * runs once per render pass. The cache is scoped to a single server request, and
+ * `cache()` wrapping this synchronous function keeps it synchronous. A UI change
+ * still takes effect immediately: mutations go through {@link setConfig} and call
+ * `revalidatePath`, and the post-mutation re-render is a fresh request/cache
+ * scope - it never reads through the pre-mutation memo. (Every writer here also
+ * reads config *before* it writes, never after, so no in-request staleness.)
  */
-export function getConfig(): HeadtowerConfig {
+export const getConfig: () => HeadtowerConfig = cache(() => {
   assertServer();
   const stored = readAllSettings();
 
@@ -270,7 +279,7 @@ export function getConfig(): HeadtowerConfig {
     agent,
     sources: { headscale: headscaleSource, oidc: oidcSource },
   };
-}
+});
 
 /** Convenience: is a usable Headscale connection configured (env or DB)? */
 export function hasHeadscaleConnection(): boolean {

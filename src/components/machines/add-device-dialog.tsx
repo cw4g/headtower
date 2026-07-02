@@ -26,11 +26,13 @@ import {
 import { Field, Input, Select } from "@/components/ui/field";
 import { CopyButton } from "@/components/ui/copy-button";
 import { Tag } from "@/components/ui/chip";
+import { TokenInput } from "@/components/ui/token-input";
 import { cn } from "@/lib/cn";
 import {
   PRE_AUTH_KEY_DEFAULT,
   PRE_AUTH_KEY_PRESETS,
 } from "@/app/(app)/settings/expiry-presets";
+import { normalizeAclTags } from "@/app/(app)/settings/pre-auth-keys/tags";
 import {
   createDeviceKey,
   registerDevice,
@@ -106,6 +108,7 @@ export function AddDeviceDialog({
   // "Create key" mode.
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<CreatedDevice | null>(null);
+  const [tags, setTags] = useState<string[]>([]);
 
   // "Use existing key" mode - nothing hits the server, so the command box
   // just tracks the pasted value.
@@ -119,6 +122,7 @@ export function AddDeviceDialog({
   function reset() {
     setError(null);
     setCreated(null);
+    setTags([]);
     setExistingKey("");
     setRegisterError(null);
     setRegistered(null);
@@ -213,6 +217,9 @@ export function AddDeviceDialog({
                   {created.reusable ? <Tag>reusable</Tag> : <Tag>single-use</Tag>}
                   {created.ephemeral && <Tag>ephemeral</Tag>}
                   <Tag>{formatExpiry(created.expiration)}</Tag>
+                  {created.aclTags.map((tag) => (
+                    <Tag key={tag}>{tag}</Tag>
+                  ))}
                 </div>
                 <OsCommandTabs
                   loginServerUrl={created.loginServerUrl}
@@ -279,6 +286,23 @@ export function AddDeviceDialog({
                       </option>
                     ))}
                   </Select>
+                </Field>
+
+                <Field
+                  label="Tags"
+                  htmlFor="add-device-tags"
+                  description="ACL tags applied to the device, e.g. server, prod. The tag: prefix is added automatically."
+                >
+                  <TokenInput
+                    id="add-device-tags"
+                    ariaLabel="Device tags"
+                    values={tags}
+                    onChange={(next) => setTags(normalizeAclTags(next))}
+                    placeholder="server, prod"
+                  />
+                  {tags.map((tag) => (
+                    <input key={tag} type="hidden" name="tags" value={tag} />
+                  ))}
                 </Field>
 
                 {error && (

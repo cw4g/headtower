@@ -150,7 +150,7 @@ function Avatar({ account }: { account: Account }) {
     );
   }
   return (
-    <span className="flex h-6 w-6 items-center justify-center rounded-full border border-line bg-graphite-800 text-[11px] font-medium text-ink-muted">
+    <span className="flex h-6 w-6 items-center justify-center rounded-full border border-line bg-surface-2 text-[11px] font-medium text-ink-muted">
       {account.name.trim().charAt(0).toUpperCase() || "?"}
     </span>
   );

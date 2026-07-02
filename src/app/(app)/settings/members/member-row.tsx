@@ -167,7 +167,7 @@ export function MemberRow({ member, isSelf, canManage, roleOptions }: MemberRowP
           )}
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="outline" size="sm">
+              <Button variant="ghost" size="sm">
                 Cancel
               </Button>
             </DialogClose>

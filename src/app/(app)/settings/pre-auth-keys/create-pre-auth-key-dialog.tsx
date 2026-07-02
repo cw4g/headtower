@@ -16,12 +16,14 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Field, Select } from "@/components/ui/field";
+import { TokenInput } from "@/components/ui/token-input";
 import { SecretReveal } from "../secret-reveal";
 import {
   PRE_AUTH_KEY_DEFAULT,
   PRE_AUTH_KEY_PRESETS,
 } from "../expiry-presets";
 import { createPreAuthKey } from "./actions";
+import { normalizeAclTags } from "./tags";
 
 export interface UserOption {
   id: string;
@@ -48,11 +50,13 @@ export function CreatePreAuthKeyDialog({
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createdKey, setCreatedKey] = useState<string | null>(null);
+  const [tags, setTags] = useState<string[]>([]);
   const [pending, startTransition] = useTransition();
 
   function reset() {
     setError(null);
     setCreatedKey(null);
+    setTags([]);
   }
 
   function handleOpenChange(next: boolean) {
@@ -157,6 +161,23 @@ export function CreatePreAuthKeyDialog({
                   description="Nodes are removed automatically when they go offline."
                 />
               </fieldset>
+
+              <Field
+                label="Tags"
+                htmlFor="pak-tags"
+                description="ACL tags applied to nodes enrolled with this key, e.g. server, prod. The tag: prefix is added automatically."
+              >
+                <TokenInput
+                  id="pak-tags"
+                  ariaLabel="Pre-auth key tags"
+                  values={tags}
+                  onChange={(next) => setTags(normalizeAclTags(next))}
+                  placeholder="server, prod"
+                />
+                {tags.map((tag) => (
+                  <input key={tag} type="hidden" name="tags" value={tag} />
+                ))}
+              </Field>
 
               {error && (
                 <p className="flex items-start gap-1.5 text-xs text-critical-500">

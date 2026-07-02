@@ -18,6 +18,7 @@ import { nodes, preAuthKeys } from "@/lib/headscale";
 import { audit, authorize } from "@/lib/authz";
 import { describeHeadscaleError } from "./errors";
 import { PRE_AUTH_KEY_PRESETS, resolveExpiry } from "../settings/expiry-presets";
+import { normalizeAclTags } from "../settings/pre-auth-keys/tags";
 
 /** Result of {@link createDeviceKey}, shaped for the Add device dialog's reveal step. */
 export type CreateDeviceKeyState =
@@ -33,6 +34,8 @@ export type CreateDeviceKeyState =
       ephemeral: boolean;
       /** RFC 3339 expiry as reported by Headscale; null when the key never expires. */
       expiration: string | null;
+      /** ACL tags applied to nodes enrolled with this key. */
+      aclTags: string[];
     }
   | { status: "error"; error: string };
 
@@ -59,6 +62,7 @@ export async function createDeviceKey(
 
   const reusable = formData.get("reusable") === "on";
   const ephemeral = formData.get("ephemeral") === "on";
+  const aclTags = normalizeAclTags(formData.getAll("tags").map(String));
 
   try {
     const created = await preAuthKeys.create({
@@ -66,13 +70,14 @@ export async function createDeviceKey(
       reusable,
       ephemeral,
       expiration,
+      aclTags: aclTags.length > 0 ? aclTags : undefined,
     });
     await audit(gate.session, {
       action: "preauthkey.create",
       targetType: "preauthkey",
       targetId: created.id,
       targetName: user,
-      detail: { user, reusable, ephemeral, source: "add-device" },
+      detail: { user, reusable, ephemeral, aclTags, source: "add-device" },
     });
     // The new key now shows up in the Settings > Pre-auth keys list too.
     revalidatePath("/settings/pre-auth-keys");
@@ -88,6 +93,7 @@ export async function createDeviceKey(
       reusable: created.reusable,
       ephemeral: created.ephemeral,
       expiration: created.expiration,
+      aclTags: created.aclTags,
     };
   } catch (err) {
     return { status: "error", error: describeHeadscaleError(err) };

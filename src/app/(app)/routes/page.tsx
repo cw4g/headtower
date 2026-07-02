@@ -7,6 +7,8 @@ import { Chip } from "@/components/ui/chip";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ConnectionError } from "@/components/machines/connection-error";
 import { RoutesBoard } from "./routes-board";
+import { ApproveAllButton } from "./approve-all-dialog";
+import { buildApproveAllEntries } from "./route-batch";
 
 // Approvals are live control-plane state; always render against Headscale.
 export const dynamic = "force-dynamic";
@@ -39,6 +41,10 @@ export default async function RoutesPage() {
   const pendingTotal = groups?.reduce((sum, g) => sum + g.pendingCount, 0) ?? 0;
   // Approving/revoking routes needs routes.write; read-only roles just observe.
   const canManage = await sessionCan("routes.write");
+  // Entries for the header's tailnet-wide "Approve all pending" sweep - empty,
+  // and the button hidden, when there's nothing pending or the role can't act.
+  const approveAllEntries =
+    canManage && groups ? buildApproveAllEntries(groups) : [];
 
   return (
     <div className="flex flex-col gap-6">
@@ -60,7 +66,21 @@ export default async function RoutesPage() {
           </span>
         }
         description="Subnet routes and exit nodes advertised across the tailnet. Approve a route to let the node serve it."
-      />
+      >
+        {approveAllEntries.length > 0 && (
+          <ApproveAllButton
+            entries={approveAllEntries}
+            label="Approve all pending"
+            title="Approve every pending route?"
+            description={`Approves ${pendingTotal} pending route${
+              pendingTotal === 1 ? "" : "s"
+            } across ${approveAllEntries.length} node${
+              approveAllEntries.length === 1 ? "" : "s"
+            } in one step.`}
+            variant="solid"
+          />
+        )}
+      </SectionHeading>
 
       {error ? (
         <ConnectionError error={error} />

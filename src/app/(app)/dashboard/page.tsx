@@ -468,16 +468,9 @@ export default async function DashboardPage() {
       toNodeView(node, now, agents.lookup(node.name, node.ipAddresses ?? [])),
     );
 
-    // Pre-auth keys for the "Expiring soon" widget, batched per user like the
-    // settings view: Headscale 0.26 - 0.28 only supports a per-user filter, so
-    // fetching per user and de-duping by id is the one approach that returns
-    // the full set across the whole supported range.
-    const keyBatches = await Promise.all(
-      userList.map((u) => preAuthKeysApi.list({ user: u.id })),
-    );
-    const keyById = new Map<string, PreAuthKey>();
-    for (const batch of keyBatches) for (const key of batch) keyById.set(key.id, key);
-    preAuthKeyList = [...keyById.values()];
+    // Pre-auth keys for the "Expiring soon" widget - the full set across
+    // every user.
+    preAuthKeyList = await preAuthKeysApi.listAll({ users: userList });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return (

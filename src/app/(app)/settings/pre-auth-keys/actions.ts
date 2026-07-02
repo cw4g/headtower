@@ -13,6 +13,7 @@ import { HeadscaleRequestError, preAuthKeys } from "@/lib/headscale";
 import { audit, authorize } from "@/lib/authz";
 import { describeHeadscaleError } from "../errors";
 import { PRE_AUTH_KEY_PRESETS, resolveExpiry } from "../expiry-presets";
+import { normalizeAclTags } from "./tags";
 
 const PATH = "/settings/pre-auth-keys";
 
@@ -22,7 +23,7 @@ export type CreatePreAuthKeyState =
   | { status: "success"; key: string; id: string }
   | { status: "error"; error: string };
 
-/** Generic result for the row-level expire action. */
+/** Generic result for the row-level expire/delete actions. */
 export type PreAuthKeyActionState =
   | { status: "success" }
   | { status: "error"; error: string };
@@ -50,6 +51,7 @@ export async function createPreAuthKey(
 
   const reusable = formData.get("reusable") === "on";
   const ephemeral = formData.get("ephemeral") === "on";
+  const aclTags = normalizeAclTags(formData.getAll("tags").map(String));
 
   try {
     const created = await preAuthKeys.create({
@@ -57,13 +59,14 @@ export async function createPreAuthKey(
       reusable,
       ephemeral,
       expiration,
+      aclTags: aclTags.length > 0 ? aclTags : undefined,
     });
     await audit(gate.session, {
       action: "preauthkey.create",
       targetType: "preauthkey",
       targetId: created.id,
       targetName: user,
-      detail: { user, reusable, ephemeral },
+      detail: { user, reusable, ephemeral, aclTags },
     });
     revalidatePath(PATH);
     return { status: "success", key: created.key, id: created.id };
@@ -100,6 +103,35 @@ export async function expirePreAuthKey(input: {
     }
     await audit(gate.session, {
       action: "preauthkey.expire",
+      targetType: "preauthkey",
+      targetId: input.id,
+      targetName: input.user || null,
+    });
+    revalidatePath(PATH);
+    return { status: "success" };
+  } catch (err) {
+    return { status: "error", error: describeHeadscaleError(err) };
+  }
+}
+
+/**
+ * Delete a pre-auth key by id. Headscale 0.29+ only; earlier releases have no
+ * delete endpoint and reject the call, surfacing as a normal control-plane
+ * error rather than a silent no-op.
+ */
+export async function deletePreAuthKey(input: {
+  id: string;
+  user: string;
+}): Promise<PreAuthKeyActionState> {
+  const gate = await authorize("keys.write");
+  if (!gate.ok) {
+    return { status: "error", error: gate.reason };
+  }
+
+  try {
+    await preAuthKeys.remove({ id: input.id });
+    await audit(gate.session, {
+      action: "preauthkey.delete",
       targetType: "preauthkey",
       targetId: input.id,
       targetName: input.user || null,

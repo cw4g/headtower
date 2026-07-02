@@ -12,6 +12,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Nested build artifacts (e.g. the docs/ subproject) are not top-level,
+    // so the bare patterns above miss them — match at any depth.
+    "**/.next/**",
+    "**/out/**",
+    "**/build/**",
   ]),
 ]);
 

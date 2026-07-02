@@ -54,6 +54,12 @@ export function AddUserDialog({ trigger }: AddUserDialogProps) {
 
   const invalid = Boolean(error);
 
+  // Any edit clears the last create failure so a single message never lingers
+  // across the several fields it might have come from.
+  function clearError() {
+    if (error) setError(null);
+  }
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
@@ -73,13 +79,12 @@ export function AddUserDialog({ trigger }: AddUserDialogProps) {
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
-          <DialogBody>
+          <DialogBody className="flex flex-col gap-4">
             <Field
               label="Username"
               htmlFor="add-user-name"
               required
               description="Lowercase letters or digits, optionally with dots, hyphens, or underscores."
-              error={invalid ? error : undefined}
             >
               <Input
                 id="add-user-name"
@@ -91,9 +96,61 @@ export function AddUserDialog({ trigger }: AddUserDialogProps) {
                 spellCheck={false}
                 placeholder="e.g. ada"
                 invalid={invalid}
-                onChange={() => error && setError(null)}
+                onChange={clearError}
               />
             </Field>
+            <Field
+              label="Display name"
+              htmlFor="add-user-display-name"
+              description="Optional. A friendly name shown across the console."
+            >
+              <Input
+                id="add-user-display-name"
+                name="displayName"
+                autoComplete="off"
+                placeholder="e.g. Ada Lovelace"
+                onChange={clearError}
+              />
+            </Field>
+            <Field
+              label="Email"
+              htmlFor="add-user-email"
+              description="Optional. Used to match an SSO sign-in to this user."
+            >
+              <Input
+                id="add-user-email"
+                name="email"
+                type="email"
+                autoComplete="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                placeholder="e.g. ada@example.com"
+                onChange={clearError}
+              />
+            </Field>
+            <Field
+              label="Picture URL"
+              htmlFor="add-user-picture-url"
+              description="Optional. Avatar image shown for this user."
+            >
+              <Input
+                id="add-user-picture-url"
+                name="pictureUrl"
+                mono
+                autoComplete="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                placeholder="https://…"
+                onChange={clearError}
+              />
+            </Field>
+            {/* Headscale has no user-update endpoint: these three fields can
+                only ever be set here, at create time. */}
+            <p className="text-xs text-ink-faint">
+              Display name, email, and picture can only be set now. Headscale
+              can&apos;t change them once the user exists.
+            </p>
+            {invalid && <p className="text-xs text-critical-500">{error}</p>}
           </DialogBody>
           <DialogFooter>
             <DialogClose asChild>

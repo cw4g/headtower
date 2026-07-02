@@ -17,6 +17,7 @@
  * SERVER-ONLY by importing `@/lib/db` (`node:sqlite`).
  */
 
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { eq, lte } from "drizzle-orm";
 import { appUser, db, session, type AppUser } from "@/lib/db";
@@ -134,8 +135,14 @@ export interface LoadedSession {
  * The secure session check: verify the cookie's signature, confirm the named
  * session row exists and is unexpired, and load the owning account. Returns null
  * for any missing/forged/expired session. Expired rows are pruned on the way.
+ *
+ * Memoized per request with React `cache()` so the cookie verify + session/user
+ * DB reads run once per render pass no matter how many callers resolve the
+ * session. Request-scoped: `startSession`/`endSession` mutate in their own
+ * request, so the next request re-reads fresh; and every in-request caller reads
+ * before it revokes (never after), so the memo is never stale within a request.
  */
-export async function loadSession(): Promise<LoadedSession | null> {
+export const loadSession: () => Promise<LoadedSession | null> = cache(async () => {
   const jar = await cookies();
   const token = jar.get(SESSION_COOKIE)?.value;
   if (!token) return null;
@@ -158,7 +165,7 @@ export async function loadSession(): Promise<LoadedSession | null> {
   // The role column is free text on disk; fall back to the default if unknown.
   const role: Role = isRole(user.role) ? user.role : DEFAULT_ROLE;
   return { user, role, sessionId: row.id };
-}
+});
 
 /**
  * Sign out: delete the current session row (if the cookie names a valid one) and

@@ -27,6 +27,8 @@ import { cn } from "@/lib/cn";
 import type { DotStatus } from "@/lib/machines";
 import type { ExitStatus, RouteGroup, RouteState } from "@/lib/routes";
 import { setExitApproval, setRouteApproval, type RouteActionState } from "./actions";
+import { ApproveAllButton } from "./approve-all-dialog";
+import { approvedCidrsOf, buildApproveAllEntry } from "./route-batch";
 
 const STATE_META: Record<
   RouteState,
@@ -74,6 +76,15 @@ function NodeRouteCard({
   group: RouteGroup;
   canManage: boolean;
 }) {
+  // A single pending route already has its own row-level Approve button; the
+  // bulk one only earns its place once there's more than one decision to fold in.
+  const approveAllEntry =
+    canManage && group.pendingCount >= 2 ? buildApproveAllEntry(group) : null;
+  // The node's approved set as this render last read it - threaded into each
+  // row's `setRouteApproval` call so it can skip its own GET (see the
+  // last-writer-wins note on `routes.approve`/`routes.revoke`).
+  const approvedRoutes = approvedCidrsOf(group);
+
   return (
     <Card>
       <CardHeader>
@@ -96,6 +107,14 @@ function NodeRouteCard({
             <Chip variant="default" mono>
               {group.approvedCount} approved
             </Chip>
+          )}
+          {approveAllEntry && (
+            <ApproveAllButton
+              entries={[approveAllEntry]}
+              label="Approve all"
+              title={`Approve all pending routes on ${group.nodeName}?`}
+              description={`Approves ${approveAllEntry.cidrs.length} pending routes on this node in one step.`}
+            />
           )}
         </div>
       </CardHeader>
@@ -126,6 +145,7 @@ function NodeRouteCard({
               cidr={route.cidr}
               state={route.state}
               canManage={canManage}
+              approvedRoutes={approvedRoutes}
             />
           ))}
         </TableBody>
@@ -139,11 +159,14 @@ function SubnetRow({
   cidr,
   state,
   canManage,
+  approvedRoutes,
 }: {
   nodeId: string;
   cidr: string;
   state: RouteState;
   canManage: boolean;
+  /** The node's approved set as last read - see `NodeRouteCard`'s comment. */
+  approvedRoutes: string[];
 }) {
   const pending = state === "pending";
   return (
@@ -154,7 +177,7 @@ function SubnetRow({
       state={state}
       canManage={canManage}
       // A pending route's button approves it; any approved route's button revokes.
-      run={() => setRouteApproval(nodeId, cidr, pending)}
+      run={() => setRouteApproval(nodeId, cidr, pending, approvedRoutes)}
     />
   );
 }

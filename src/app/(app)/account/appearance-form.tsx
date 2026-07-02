@@ -92,7 +92,9 @@ export function AppearanceForm({
                   className="flex h-5 w-5 items-center justify-center rounded-full"
                   style={{ backgroundColor: preset.swatch }}
                 >
-                  {active && <Check className="h-3 w-3 text-graphite-950" aria-hidden />}
+                  {active && (
+                    <Check className={cn("h-3 w-3", preset.check)} aria-hidden />
+                  )}
                 </span>
               </button>
             );

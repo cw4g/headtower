@@ -41,7 +41,6 @@ import { Chip, Tag } from "@/components/ui/chip";
 import { StatusDot } from "@/components/ui/status-dot";
 import { CopyButton } from "@/components/ui/copy-button";
 import { ConnectionError } from "@/components/machines/connection-error";
-import { NodeActions } from "@/components/machines/node-actions";
 import { NodeActionsMenu } from "@/components/machines/node-actions-menu";
 import { TerminalAction } from "@/components/machines/terminal-action";
 import { humanizeAction, summarizeDetail } from "../../audit/format";
@@ -168,21 +167,6 @@ function MachineDetail({
         </div>
 
         <div className="flex flex-col gap-4">
-          {canManage && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Actions</CardTitle>
-              </CardHeader>
-              <CardBody>
-                <NodeActions
-                  nodeId={view.id}
-                  name={view.name}
-                  tags={view.tags}
-                />
-              </CardBody>
-            </Card>
-          )}
-
           <ConnectivityCard view={view} dot={dot} now={now} />
           <ActivityCard entries={audit} activity={activity} now={now} />
         </div>

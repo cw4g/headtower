@@ -1,9 +1,11 @@
 /**
  * Donut — a distribution ring with a center readout and an optional legend.
  * Built from stroke-dash arcs (no arc-path maths, handles a single 100% slice
- * cleanly). Slices without an explicit tone fall back to a quiet graphite ramp
- * so the ring stays schematic; pass `tone` per slice for semantic colours
- * (online / warn / critical) and reserve `beacon` for the one slice to feature.
+ * cleanly). Slices without an explicit tone fall back to a quiet opacity ramp
+ * of `ink` (a theme-flipping token, unlike a fixed graphite shade) so the ring
+ * stays schematic and legible in both themes; pass `tone` per slice for
+ * semantic colours (online / warn / critical) and reserve `beacon` for the
+ * one slice to feature.
  */
 import * as React from "react";
 import { cn } from "@/lib/cn";
@@ -37,14 +39,18 @@ export interface DonutProps {
   "aria-label"?: string;
 }
 
-/** Quiet monochrome ramp for un-toned slices, beacon leading. */
+/**
+ * Quiet monochrome ramp for un-toned slices, beacon leading. Opacity steps of
+ * `ink` rather than fixed graphite shades, so every step still contrasts
+ * against the `surface-2` track once `ink` itself flips for the theme.
+ */
 const RAMP: { stroke: string; bg: string }[] = [
   { stroke: "stroke-beacon-500", bg: "bg-beacon-500" },
-  { stroke: "stroke-graphite-400", bg: "bg-graphite-400" },
-  { stroke: "stroke-graphite-600", bg: "bg-graphite-600" },
-  { stroke: "stroke-graphite-300", bg: "bg-graphite-300" },
-  { stroke: "stroke-graphite-700", bg: "bg-graphite-700" },
-  { stroke: "stroke-graphite-500", bg: "bg-graphite-500" },
+  { stroke: "stroke-ink/85", bg: "bg-ink/85" },
+  { stroke: "stroke-ink/65", bg: "bg-ink/65" },
+  { stroke: "stroke-ink/50", bg: "bg-ink/50" },
+  { stroke: "stroke-ink/75", bg: "bg-ink/75" },
+  { stroke: "stroke-ink/40", bg: "bg-ink/40" },
 ];
 
 function sliceColor(slice: DonutSlice, i: number): { stroke: string; bg: string } {

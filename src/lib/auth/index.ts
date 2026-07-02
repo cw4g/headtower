@@ -23,6 +23,7 @@
  * inside Server Components, Route Handlers, and Server Actions.
  */
 
+import { cache } from "react";
 import { ConfigError, getConfig } from "@/lib/config";
 import { type Role } from "@/lib/rbac";
 import { isOidcEnabled } from "./oidc";
@@ -72,8 +73,13 @@ const OPERATOR: SessionUser = {
  * a successful `getConfig()` (which guarantees HEADSCALE_API_KEY) implies the
  * operator. Bad config is treated as unauthenticated; real programming errors
  * (e.g. a server-only violation) still throw.
+ *
+ * Memoized per request with React `cache()`: `getConfig()` and (in OIDC mode)
+ * the cookie verify + `loadSession()` DB read run once per render pass, however
+ * many times a view resolves the session. The cache is request-scoped, so a
+ * sign-in/out (its own request) always re-derives.
  */
-export async function getSession(): Promise<Session | null> {
+export const getSession: () => Promise<Session | null> = cache(async () => {
   try {
     getConfig();
   } catch (error) {
@@ -99,7 +105,7 @@ export async function getSession(): Promise<Session | null> {
   // Single-operator mode: whoever can reach the console owns the deployment, so
   // grant the full owner role (every capability, including settings.write).
   return { user: OPERATOR, role: "owner" };
-}
+});
 
 /**
  * Return the current session, or throw {@link UnauthorizedError}.

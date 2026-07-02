@@ -32,33 +32,41 @@ export interface AccentPreset {
   /** Swatch shown in the picker (the 500 shade). */
   swatch: string;
   vars: { 300: string; 400: string; 500: string; 600: string };
+  /**
+   * Text colour for the check icon drawn on the swatch. Picked per swatch
+   * (not derived from the theme) since the swatch is a fixed hex that
+   * doesn't flip with `.dark` - a single hardcoded shade doesn't contrast
+   * reliably across every preset's lightness.
+   */
+  check: string;
 }
 
-/** The default entry mirrors the shipped beacon amber - selecting it is a no-op. */
+/**
+ * The single beacon accent stays warm and blue-free: amber (the shipped
+ * default) plus two warm-neutral-compatible variants. Selecting "amber" is a
+ * no-op since it mirrors the shipped default.
+ */
 export const ACCENT_PRESETS: readonly AccentPreset[] = [
   {
     id: "amber",
     label: "Amber",
     swatch: "#f5b544",
     vars: { 300: "#ffd98a", 400: "#f9c45c", 500: "#f5b544", 600: "#e09b22" },
+    check: "text-graphite-950",
   },
   {
-    id: "sky",
-    label: "Sky",
-    swatch: "#0ea5e9",
-    vars: { 300: "#7dd3fc", 400: "#38bdf8", 500: "#0ea5e9", 600: "#0284c7" },
+    id: "ember",
+    label: "Ember",
+    swatch: "#f97316",
+    vars: { 300: "#fdba74", 400: "#fb923c", 500: "#f97316", 600: "#ea580c" },
+    check: "text-graphite-950",
   },
   {
-    id: "violet",
-    label: "Violet",
-    swatch: "#8b5cf6",
-    vars: { 300: "#c4b5fd", 400: "#a78bfa", 500: "#8b5cf6", 600: "#7c3aed" },
-  },
-  {
-    id: "teal",
-    label: "Teal",
-    swatch: "#14b8a6",
-    vars: { 300: "#5eead4", 400: "#2dd4bf", 500: "#14b8a6", 600: "#0d9488" },
+    id: "brass",
+    label: "Brass",
+    swatch: "#8a6d3f",
+    vars: { 300: "#c9ad74", 400: "#ab8a52", 500: "#8a6d3f", 600: "#6b5330" },
+    check: "text-graphite-50",
   },
 ];
 export const DEFAULT_ACCENT = "amber";

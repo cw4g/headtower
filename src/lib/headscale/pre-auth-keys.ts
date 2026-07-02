@@ -2,6 +2,7 @@
  * Pre-auth keys resource - Headscale 0.26 - 0.29.
  *
  *   GET    /api/v1/preauthkey?user={id}          list({ user })
+ *   GET    /api/v1/preauthkey                     listAll()         (0.29+)
  *   POST   /api/v1/preauthkey                     create(input)
  *   POST   /api/v1/preauthkey/expire              expire(input)
  *   DELETE /api/v1/preauthkey?id={id}             remove({ id })   (0.29+)
@@ -16,11 +17,13 @@
  * Server-only; see ./client.
  */
 
-import { request } from "./client";
+import { HeadscaleRequestError, request } from "./client";
+import { users } from "./users";
 import type {
   ListPreAuthKeysResponse,
   PreAuthKey,
   PreAuthKeyResponse,
+  User,
 } from "./types";
 
 export type { PreAuthKey } from "./types";
@@ -60,6 +63,34 @@ export const preAuthKeys = {
       query: { user: options.user },
     });
     return res.preAuthKeys ?? [];
+  },
+
+  /**
+   * List every pre-auth key across every user, de-duplicated by id.
+   *
+   * Tries the unfiltered `list()` call first - on 0.29+ that alone returns the
+   * full set. 0.26 - 0.28 require the `user` filter and reject the unfiltered
+   * call, so this falls back to fetching every user, then that user's keys, and
+   * merging the batches - the same shape the settings and dashboard views used
+   * to hand-roll. Pass an already-fetched `users` list to skip the extra
+   * `users.list()` round trip when the fallback runs.
+   */
+  async listAll(options: { users?: User[] } = {}): Promise<PreAuthKey[]> {
+    try {
+      return await preAuthKeys.list();
+    } catch (err) {
+      if (!(err instanceof HeadscaleRequestError)) throw err;
+    }
+
+    const allUsers = options.users ?? (await users.list());
+    const batches = await Promise.all(
+      allUsers.map((user) => preAuthKeys.list({ user: user.id })),
+    );
+    const byId = new Map<string, PreAuthKey>();
+    for (const batch of batches) {
+      for (const key of batch) byId.set(key.id, key);
+    }
+    return [...byId.values()];
   },
 
   /** Create a pre-auth key. Returns the key (its `key` field is the secret). */

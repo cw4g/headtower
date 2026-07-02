@@ -1,4 +1,5 @@
-import { TriangleAlert, UsersRound } from "lucide-react";
+import Link from "next/link";
+import { ChevronRight, TriangleAlert, UsersRound } from "lucide-react";
 import { nodes, users, type User } from "@/lib/headscale";
 import { withoutAgentNodes } from "@/lib/agent-node";
 import { sessionCan } from "@/lib/authz";
@@ -19,6 +20,7 @@ import {
 import { AddUserDialog } from "./add-user-dialog";
 import { describeHeadscaleError } from "./errors";
 import { AvatarImage } from "./avatar-image";
+import { UserActions } from "./user-actions";
 
 // The tailnet is live state: always render against the control plane, never a
 // build-time snapshot.
@@ -113,7 +115,10 @@ export default async function UsersPage() {
   const nodeCounts = data?.nodeCounts ?? null;
   const accounts = data?.accounts ?? new Map<string, AppUser>();
   // Only roles with users.write may create users; hide the affordance otherwise.
+  // The same capability gates the per-row rename/delete actions, so one read
+  // covers both the create button and the kebab column.
   const canCreate = await sessionCan("users.write");
+  const canManage = canCreate;
 
   return (
     <div className="flex flex-col gap-6">
@@ -152,7 +157,14 @@ export default async function UsersPage() {
                 <Th>ID</Th>
                 <Th align="right">Nodes</Th>
                 <Th>Source</Th>
-                <Th align="right">Created</Th>
+                <Th className={canManage ? undefined : "pr-4"} align="right">
+                  Created
+                </Th>
+                {canManage && (
+                  <Th className="pr-4" align="right">
+                    <span className="sr-only">Actions</span>
+                  </Th>
+                )}
               </Tr>
             </TableHead>
             <TableBody>
@@ -163,6 +175,7 @@ export default async function UsersPage() {
                   account={accounts.get(user.id) ?? null}
                   nodeCount={nodeCounts?.get(user.id) ?? null}
                   countsAvailable={nodeCounts !== null}
+                  canManage={canManage}
                 />
               ))}
             </TableBody>
@@ -178,12 +191,15 @@ function UserRow({
   account,
   nodeCount,
   countsAvailable,
+  canManage,
 }: {
   user: User;
   /** The Headtower account matched to this tailnet user, if it signed in via OIDC. */
   account: AppUser | null;
   nodeCount: number | null;
   countsAvailable: boolean;
+  /** Renders the trailing kebab column when the session can manage users. */
+  canManage: boolean;
 }) {
   const displayName = user.displayName?.trim() || user.name;
   const showHandle = Boolean(user.displayName?.trim()) && user.displayName.trim() !== user.name;
@@ -191,12 +207,17 @@ function UserRow({
   const provider = user.provider?.trim();
 
   return (
-    <Tr>
+    <Tr className="group">
       <Td>
         <div className="flex items-center gap-3">
           <Avatar user={user} account={account} />
           <div className="flex min-w-0 flex-col leading-tight">
-            <span className="truncate font-medium text-ink">{displayName}</span>
+            <Link
+              href={`/users/${user.id}`}
+              className="truncate font-medium text-ink transition-colors hover:text-beacon-500"
+            >
+              {displayName}
+            </Link>
             {showHandle && (
               <span className="data truncate text-xs text-ink-faint">@{user.name}</span>
             )}
@@ -211,10 +232,19 @@ function UserRow({
           <span className="text-ink-faint" title="Node count unavailable">
             ·
           </span>
-        ) : nodeCount && nodeCount > 0 ? (
-          nodeCount
         ) : (
-          <span className="text-ink-faint">0</span>
+          // The count doubles as a jump to this user's slice of the machines
+          // list; the `user` param is honoured by a later wave.
+          <Link
+            href={`/machines?user=${encodeURIComponent(user.name)}`}
+            className="transition-colors hover:text-beacon-500"
+          >
+            {nodeCount && nodeCount > 0 ? (
+              nodeCount
+            ) : (
+              <span className="text-ink-faint">0</span>
+            )}
+          </Link>
         )}
       </Td>
       <Td>
@@ -234,9 +264,34 @@ function UserRow({
           <span className="text-xs text-ink-faint">local</span>
         )}
       </Td>
-      <Td data align="right" className="text-ink-muted" title={created?.title}>
-        {created ? created.label : <span className="text-ink-faint">·</span>}
+      <Td
+        data
+        align="right"
+        className={canManage ? "text-ink-muted" : "pr-4 text-ink-muted"}
+        title={created?.title}
+      >
+        <span className="inline-flex items-center justify-end gap-2">
+          {created ? created.label : <span className="text-ink-faint">·</span>}
+          <ChevronRight
+            aria-hidden
+            className="h-3.5 w-3.5 shrink-0 text-ink-faint opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+          />
+        </span>
       </Td>
+
+      {/* Actions - the kebab wires the rename/delete dialogs; gated by
+          users.write, matching the machines rows' actions column. */}
+      {canManage && (
+        <Td className="pr-4" align="right">
+          <UserActions
+            userId={user.id}
+            name={user.name}
+            ownedNodeCount={nodeCount ?? 0}
+            redirectAfterDelete="/users"
+            className="ml-auto"
+          />
+        </Td>
+      )}
     </Tr>
   );
 }
@@ -271,12 +326,12 @@ function ErrorPanel({ message }: { message: string }) {
         <p className="text-sm font-medium text-ink">Couldn&apos;t load users</p>
         <p className="mx-auto max-w-sm text-xs text-ink-muted">{message}</p>
       </div>
-      <a
+      <Link
         href="/users"
         className="text-xs font-medium text-beacon-500 transition-colors hover:text-beacon-400"
       >
         Retry
-      </a>
+      </Link>
     </div>
   );
 }
