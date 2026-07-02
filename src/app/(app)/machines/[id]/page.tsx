@@ -10,6 +10,7 @@ import {
   KeyRound,
   MapPin,
   Network,
+  NotebookPen,
   Radio,
   Route as RouteIcon,
   Waypoints,
@@ -19,6 +20,13 @@ import type { Node } from "@/lib/headscale";
 import { getAgentPeers } from "@/lib/agent";
 import { sessionCan } from "@/lib/authz";
 import { listAudit, type AuditEntry } from "@/lib/audit";
+import {
+  getNodeMetadata,
+  getNodeMetadataMap,
+  hasMetadata,
+  EMPTY_NODE_METADATA,
+  type NodeMetadataValue,
+} from "@/lib/db";
 import {
   toNodeView,
   nodeDot,
@@ -40,9 +48,15 @@ import {
 import { Chip, Tag } from "@/components/ui/chip";
 import { StatusDot } from "@/components/ui/status-dot";
 import { CopyButton } from "@/components/ui/copy-button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { ConnectionError } from "@/components/machines/connection-error";
 import { NodeActionsMenu } from "@/components/machines/node-actions-menu";
 import { TerminalAction } from "@/components/machines/terminal-action";
+import {
+  NodeMetadataDialog,
+  EnvironmentBadge,
+  NodeLabelChips,
+} from "@/components/machines/node-metadata-dialog";
 import { humanizeAction, summarizeDetail } from "../../audit/format";
 import { cn } from "@/lib/cn";
 
@@ -76,16 +90,21 @@ export default async function MachineDetailPage({
   // Enrichment and gating resolve concurrently: role (for the Actions panel
   // and the Terminal action), the optional agent sidecar (device facts), and
   // this node's audit history.
-  const [canManage, canSsh, agent, nodeAudit] = await Promise.all([
-    sessionCan("machines.write"),
-    sessionCan("ssh.connect"),
-    found
-      ? getAgentPeers().then((peers) =>
-          peers.lookup(found.name, found.ipAddresses ?? []),
-        )
-      : Promise.resolve<NodeAgentInfo | null>(null),
-    found ? loadNodeAudit(found.id) : Promise.resolve<AuditEntry[]>([]),
-  ]);
+  const [canManage, canSsh, agent, nodeAudit, metadata, labelSuggestions] =
+    await Promise.all([
+      sessionCan("machines.write"),
+      sessionCan("ssh.connect"),
+      found
+        ? getAgentPeers().then((peers) =>
+            peers.lookup(found.name, found.ipAddresses ?? []),
+          )
+        : Promise.resolve<NodeAgentInfo | null>(null),
+      found ? loadNodeAudit(found.id) : Promise.resolve<AuditEntry[]>([]),
+      found
+        ? getNodeMetadata(found.id)
+        : Promise.resolve<NodeMetadataValue>(EMPTY_NODE_METADATA),
+      found ? loadFleetLabels() : Promise.resolve<string[]>([]),
+    ]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -106,6 +125,8 @@ export default async function MachineDetailPage({
           canSsh={canSsh}
           agent={agent}
           audit={nodeAudit}
+          metadata={metadata}
+          labelSuggestions={labelSuggestions}
         />
       ) : null}
     </div>
@@ -127,18 +148,40 @@ async function loadNodeAudit(nodeId: string): Promise<AuditEntry[]> {
   }
 }
 
+/**
+ * Every label already in use across the fleet, offered as autocomplete in the
+ * metadata dialog so operators converge on a shared vocabulary. Best-effort: an
+ * unavailable local store just yields no suggestions.
+ */
+async function loadFleetLabels(): Promise<string[]> {
+  try {
+    const map = await getNodeMetadataMap();
+    const labels = new Set<string>();
+    for (const value of map.values()) {
+      for (const label of value.labels) labels.add(label);
+    }
+    return [...labels].sort();
+  } catch {
+    return [];
+  }
+}
+
 function MachineDetail({
   node,
   canManage,
   canSsh,
   agent,
   audit,
+  metadata,
+  labelSuggestions,
 }: {
   node: Node;
   canManage: boolean;
   canSsh: boolean;
   agent: NodeAgentInfo | null;
   audit: AuditEntry[];
+  metadata: NodeMetadataValue;
+  labelSuggestions: string[];
 }) {
   const now = nowMs();
   const view = toNodeView(node, now, agent);
@@ -159,6 +202,13 @@ function MachineDetail({
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="flex flex-col gap-4 lg:col-span-2">
+          <MetadataCard
+            nodeId={view.id}
+            name={view.name}
+            metadata={metadata}
+            canManage={canManage}
+            labelSuggestions={labelSuggestions}
+          />
           <AddressesCard view={view} />
           {view.agent && <SystemCard agent={view.agent} />}
           <RoutesCard view={view} node={node} />
@@ -332,6 +382,93 @@ function FieldLabel({
       {Icon && <Icon className="h-3.5 w-3.5" aria-hidden />}
       {children}
     </span>
+  );
+}
+
+/**
+ * Headtower-local annotations: an operator note, a deployment environment, and
+ * free labels. Explicitly NOT control-plane state - the footer says so - so the
+ * card reads as "Headtower's own view of this node." Operators with
+ * `machines.write` get the edit dialog; everyone else sees a read-only card.
+ */
+function MetadataCard({
+  nodeId,
+  name,
+  metadata,
+  canManage,
+  labelSuggestions,
+}: {
+  nodeId: string;
+  name: string;
+  metadata: NodeMetadataValue;
+  canManage: boolean;
+  labelSuggestions: string[];
+}) {
+  const present = hasMetadata(metadata);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <NotebookPen className="h-4 w-4 text-ink-faint" aria-hidden />
+          Metadata
+        </CardTitle>
+        {canManage && present && (
+          <NodeMetadataDialog
+            nodeId={nodeId}
+            name={name}
+            metadata={metadata}
+            labelSuggestions={labelSuggestions}
+          />
+        )}
+      </CardHeader>
+      <CardBody className="flex flex-col gap-4">
+        {present ? (
+          <>
+            {metadata.environment && (
+              <div className="flex items-center justify-between gap-3">
+                <FieldLabel>Environment</FieldLabel>
+                <EnvironmentBadge environment={metadata.environment} />
+              </div>
+            )}
+            {metadata.note && (
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel>Note</FieldLabel>
+                <p className="whitespace-pre-wrap break-words text-sm text-ink-muted">
+                  {metadata.note}
+                </p>
+              </div>
+            )}
+            {metadata.labels.length > 0 && (
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel>Labels</FieldLabel>
+                <NodeLabelChips labels={metadata.labels} />
+              </div>
+            )}
+            <p className="text-xs text-ink-faint">
+              Stored in Headtower, not pushed to Headscale.
+            </p>
+          </>
+        ) : (
+          <EmptyState
+            icon={NotebookPen}
+            className="py-8"
+            title="No metadata yet"
+            description="Add an operator note, an environment, or labels. Stored in Headtower only - never pushed to Headscale."
+            action={
+              canManage ? (
+                <NodeMetadataDialog
+                  nodeId={nodeId}
+                  name={name}
+                  metadata={metadata}
+                  labelSuggestions={labelSuggestions}
+                />
+              ) : undefined
+            }
+          />
+        )}
+      </CardBody>
+    </Card>
   );
 }
 

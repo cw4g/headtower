@@ -6,6 +6,11 @@ import { Antenna, ChevronRight, Network, SignalHigh } from "lucide-react";
 import { StatusDot } from "@/components/ui/status-dot";
 import { Chip, Tag } from "@/components/ui/chip";
 import { Sparkline, type ChartTone } from "@/components/charts";
+import {
+  EnvironmentBadge,
+  NodeLabelChips,
+} from "@/components/machines/node-metadata-dialog";
+import type { NodeMetadataValue } from "@/lib/db/node-metadata-types";
 import { NodeActionsMenu } from "@/components/machines/node-actions-menu";
 import { MachinesToolbar } from "@/components/machines/machines-toolbar";
 import { BulkActionBar } from "@/components/machines/bulk-action-bar";
@@ -37,6 +42,7 @@ export function MachinesCards({
   nowMs,
   canManage = false,
   knownTags,
+  metadata,
 }: {
   nodes: NodeView[];
   nowMs: number;
@@ -48,6 +54,12 @@ export function MachinesCards({
   canManage?: boolean;
   /** Tailnet-wide tag suggestions for each card's Edit tags dialog. */
   knownTags?: string[];
+  /**
+   * Headtower-local per-node metadata (note / environment / labels), keyed by
+   * node id. Optional and read-only here: cards surface the environment badge
+   * and label chips as quiet context alongside the ACL tags.
+   */
+  metadata?: Record<string, NodeMetadataValue>;
 }) {
   const filter = useMachinesFilter(nodes);
   const { filtered, clear } = filter;
@@ -117,6 +129,7 @@ export function MachinesCards({
               nowMs={nowMs}
               canManage={canManage}
               knownTags={knownTags}
+              metadata={metadata?.[node.id]}
               selected={selected.has(node.id)}
               onToggle={() => toggleCard(node.id)}
             />
@@ -140,6 +153,7 @@ function HostCard({
   nowMs,
   canManage,
   knownTags,
+  metadata,
   selected,
   onToggle,
 }: {
@@ -147,6 +161,7 @@ function HostCard({
   nowMs: number;
   canManage: boolean;
   knownTags?: string[];
+  metadata?: NodeMetadataValue;
   selected: boolean;
   onToggle: () => void;
 }) {
@@ -169,6 +184,10 @@ function HostCard({
 
   const primaryAddr = node.ipv4 ?? node.ipv6;
   const secondaryAddr = node.ipv4 && node.ipv6 ? node.ipv6 : null;
+
+  const env = metadata?.environment ?? null;
+  const labels = metadata?.labels ?? [];
+  const hasMeta = env != null || labels.length > 0;
 
   const hasMarkers =
     node.isExitNode ||
@@ -245,8 +264,9 @@ function HostCard({
           )}
         </div>
 
-        {/* Route / exit markers, then tags - one calm, scannable wrap. */}
-        {(hasMarkers || hasTags) && (
+        {/* Route / exit markers, then tags, then quiet Headtower-local
+            metadata chips (environment + labels) - one calm, scannable wrap. */}
+        {(hasMarkers || hasTags || hasMeta) && (
           <div className="flex flex-wrap items-center gap-1">
             {node.isExitNode && (
               <Chip variant="default" className="gap-1" title="Active exit node">
@@ -307,6 +327,8 @@ function HostCard({
                 {node.invalidTags.length} invalid
               </Chip>
             )}
+            <EnvironmentBadge environment={env} size="sm" />
+            <NodeLabelChips labels={labels} max={3} />
           </div>
         )}
 

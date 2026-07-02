@@ -31,6 +31,7 @@ import {
   appSettings,
   appUser,
   auditLog,
+  nodeMetadata,
   SCHEMA_DDL,
   session,
   snapshots,
@@ -151,5 +152,5 @@ const remoteCallback: AsyncRemoteCallback = async (sqlText, params, method) => {
 };
 
 export const db = drizzle(remoteCallback, {
-  schema: { auditLog, appUser, session, appSettings, snapshots },
+  schema: { auditLog, appUser, session, appSettings, snapshots, nodeMetadata },
 });

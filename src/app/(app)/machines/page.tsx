@@ -10,6 +10,7 @@ import { getAgentPeers } from "@/lib/agent";
 import { withoutAgentNodes } from "@/lib/agent-node";
 import { sessionCan } from "@/lib/authz";
 import { getConfig } from "@/lib/config";
+import { getNodeMetadataMap, type NodeMetadataValue } from "@/lib/db";
 import {
   toNodeView,
   nowMs,
@@ -91,6 +92,10 @@ export default async function MachinesPage() {
   // Tag suggestions for the Edit tags dialog: every tag already in use across
   // the tailnet, plus the tagOwners keys declared in the ACL policy.
   const knownTags = error ? [] : await collectKnownTags(views);
+  // Headtower-local per-node metadata (note / environment / labels), surfaced as
+  // quiet chips on the rows. Read only for the machines actually shown, and
+  // best-effort so an unavailable store never blocks the list.
+  const nodeMetadata = error ? {} : await collectNodeMetadata(views);
 
   return (
     <div className="flex flex-col gap-6">
@@ -121,12 +126,14 @@ export default async function MachinesPage() {
             nowMs={now}
             canManage={canManage}
             knownTags={knownTags}
+            metadata={nodeMetadata}
           />
         ) : (
           <MachinesTable
             nodes={views}
             canManage={canManage}
             knownTags={knownTags}
+            metadata={nodeMetadata}
           />
         )
       ) : (
@@ -167,4 +174,24 @@ async function collectKnownTags(views: NodeView[] | null): Promise<string[]> {
     // Best-effort; in-use tags are enough on their own.
   }
   return [...tags].sort();
+}
+
+/**
+ * Resolve Headtower-local metadata for the shown machines as a plain
+ * `nodeId -> value` record (serialisable straight to the client rows). Only
+ * annotated nodes appear, so a row cheaply checks `metadata[node.id]`.
+ * Best-effort: an unavailable local store yields an empty record.
+ */
+async function collectNodeMetadata(
+  views: NodeView[] | null,
+): Promise<Record<string, NodeMetadataValue>> {
+  if (!views || views.length === 0) return {};
+  try {
+    const map = await getNodeMetadataMap(views.map((v) => v.id));
+    const out: Record<string, NodeMetadataValue> = {};
+    for (const [id, value] of map) out[id] = value;
+    return out;
+  } catch {
+    return {};
+  }
 }

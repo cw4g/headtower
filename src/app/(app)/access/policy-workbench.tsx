@@ -5,15 +5,19 @@ import {
   Braces,
   CircleCheck,
   CircleSlash,
+  GitCompare,
   LayoutPanelLeft,
   Minus,
+  Radar,
   Save,
   TriangleAlert,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
 import { Kbd } from "@/components/ui/kbd";
 import { SegmentedTabs, type SegmentedOption } from "@/components/ui/segmented";
 import {
+  lintPolicy,
   parsePolicy,
   serializePolicy,
   validateHujson,
@@ -21,7 +25,10 @@ import {
   type Validity,
 } from "@/lib/policy";
 import { savePolicy } from "./actions";
+import { DiffView } from "./diff-view";
 import { JsonEditor } from "./json-editor";
+import { LintPanel } from "./lint-panel";
+import { ReachabilityTester } from "./reachability-tester";
 import { VisualEditor } from "./visual-editor";
 
 interface PolicyWorkbenchProps {
@@ -33,16 +40,32 @@ interface PolicyWorkbenchProps {
   unset?: boolean;
   /** When false (role lacks acls.write), the editor is view-only: Save is off. */
   canSave?: boolean;
+  /** Live tailnet users (names/emails) for the linter and the Test tab. */
+  knownUsers?: string[];
 }
 
-type Tab = "visual" | "json";
+type Tab = "visual" | "json" | "review" | "test";
 
 const PARSE_FALLBACK = "This document isn't valid HuJSON yet.";
 
 const TAB_OPTIONS: SegmentedOption<Tab>[] = [
   { value: "visual", label: "Visual", icon: LayoutPanelLeft },
   { value: "json", label: "JSON", icon: Braces },
+  { value: "review", label: "Review", icon: GitCompare },
+  { value: "test", label: "Test", icon: Radar },
 ];
+
+/** Vocabulary tokens the Test tab offers as source/destination suggestions. */
+function reachabilityVocab(model: PolicyModel): string[] {
+  const out = new Set<string>(["*"]);
+  for (const g of model.groups) if (g.name) out.add(g.name);
+  for (const t of model.tagOwners) if (t.name) out.add(t.name);
+  for (const h of model.hosts) if (h.name) out.add(h.name);
+  for (const g of model.groups) {
+    for (const member of g.values) if (member.includes("@")) out.add(member);
+  }
+  return [...out];
+}
 
 /**
  * The Access workbench: a schematic console hosting two synced views of one
@@ -57,6 +80,7 @@ export function PolicyWorkbench({
   initialUpdatedAt,
   unset = false,
   canSave: writable = true,
+  knownUsers = [],
 }: PolicyWorkbenchProps) {
   const initial = React.useMemo(
     () => parsePolicy(initialDocument),
@@ -82,6 +106,20 @@ export function PolicyWorkbench({
   const dirty = value !== savedValue;
   const validity = React.useMemo<Validity>(() => validateHujson(value), [value]);
   const canSave = writable && dirty && !pending && value.trim() !== "";
+
+  // A live re-parse of the current document, independent of the visual model
+  // (which only re-parses on tab switch). Powers the advisory linter and the
+  // Test tab so both track raw JSON edits keystroke-by-keystroke.
+  const parsedNow = React.useMemo(() => parsePolicy(value), [value]);
+  const lintFindings = React.useMemo(
+    () => (parsedNow.ok ? lintPolicy(parsedNow.model, { knownUsers }) : []),
+    [parsedNow, knownUsers],
+  );
+  const vocab = React.useMemo(
+    () => reachabilityVocab(parsedNow.model),
+    [parsedNow],
+  );
+  const showLint = tab === "visual" || tab === "json";
 
   function clearTransient() {
     if (saveError) setSaveError(null);
@@ -116,6 +154,21 @@ export function PolicyWorkbench({
     return () => window.removeEventListener("keydown", onKey);
   }, [commit, dirty, value, writable]);
 
+  // Unsaved-changes guard: warn before a full page unload (reload/close/external
+  // nav). In-app App Router navigation can't be reliably blocked, so we pair this
+  // with the always-visible "Unsaved changes" indicator near Save rather than
+  // hacking router internals.
+  React.useEffect(() => {
+    if (!dirty) return;
+    function onBeforeUnload(event: BeforeUnloadEvent) {
+      event.preventDefault();
+      // Legacy browsers require a returnValue to trigger the native prompt.
+      event.returnValue = "";
+    }
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirty]);
+
   // Switching to Visual re-parses the current document so the builder reflects
   // any raw edits. A parse failure routes to a notice instead of the builder.
   function selectVisual() {
@@ -128,6 +181,13 @@ export function PolicyWorkbench({
 
   function selectJson() {
     setTab("json");
+  }
+
+  // Route each tab: Visual re-parses so the builder reflects raw edits; the
+  // others (JSON, Review, Test) read live state and just switch.
+  function selectTab(next: Tab) {
+    if (next === "visual") selectVisual();
+    else setTab(next);
   }
 
   function onModelChange(next: PolicyModel) {
@@ -149,10 +209,15 @@ export function PolicyWorkbench({
           <SegmentedTabs
             options={TAB_OPTIONS}
             value={tab}
-            onValueChange={(next) => (next === "visual" ? selectVisual() : selectJson())}
+            onValueChange={selectTab}
             ariaLabel="Policy editor view"
           />
           <ValidityBadge validity={validity} />
+          {showLint && parsedNow.ok && lintFindings.length > 0 && (
+            <Chip mono variant="warn" className="hidden sm:inline-flex">
+              {lintFindings.length} lint
+            </Chip>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <SaveState
@@ -180,13 +245,25 @@ export function PolicyWorkbench({
         ) : (
           <VisualEditor model={model} onChange={onModelChange} />
         )
-      ) : (
+      ) : tab === "json" ? (
         <JsonEditor
           value={value}
           onChange={onJsonChange}
           invalid={validity.kind === "invalid"}
         />
+      ) : tab === "review" ? (
+        <DiffView before={savedValue} after={value} />
+      ) : (
+        <ReachabilityTester
+          savedDocument={savedValue}
+          editedDocument={value}
+          dirty={dirty}
+          suggestions={vocab}
+        />
       )}
+
+      {/* Advisory lint strip - only while editing (Visual / JSON). */}
+      {showLint && <LintPanel findings={lintFindings} ready={parsedNow.ok} />}
 
       {/* Status rail: parse / save detail, then the live counters. */}
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-line bg-surface-2/60 px-4 py-2 text-[11px]">
@@ -203,6 +280,14 @@ export function PolicyWorkbench({
           ) : tab === "visual" ? (
             <span className="text-ink-faint">
               Visual builder: edits write straight to the HuJSON document.
+            </span>
+          ) : tab === "review" ? (
+            <span className="text-ink-faint">
+              Reviewing saved vs edited. Advisory only - save when ready.
+            </span>
+          ) : tab === "test" ? (
+            <span className="text-ink-faint">
+              Reachability is evaluated over the policy model, not the live tailnet.
             </span>
           ) : (
             <span className="text-ink-faint">

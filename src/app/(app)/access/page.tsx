@@ -2,6 +2,7 @@ import { FileLock2 } from "lucide-react";
 import {
   HeadscaleRequestError,
   policy as policyApi,
+  users as usersApi,
   type Policy,
 } from "@/lib/headscale";
 import { parseHeadscaleDetail } from "@/lib/headscale/describe";
@@ -42,6 +43,19 @@ export default async function AccessPage() {
   // Saving the policy requires acls.write; read-only roles get a view-only editor.
   const canSave = await sessionCan("acls.write");
 
+  // The live user list feeds the advisory linter (unknown-user cross-check) and
+  // the reachability tester's autocomplete. It's a nice-to-have, so a read
+  // failure here degrades to an empty list rather than faulting the page.
+  let knownUsers: string[] = [];
+  try {
+    const list = await usersApi.list();
+    knownUsers = list.flatMap((u) =>
+      [u.name, u.email].filter((v): v is string => Boolean(v)),
+    );
+  } catch {
+    knownUsers = [];
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <SectionHeading
@@ -69,6 +83,7 @@ export default async function AccessPage() {
           initialUpdatedAt={doc?.updatedAt ?? null}
           unset={unset}
           canSave={canSave}
+          knownUsers={knownUsers}
         />
       )}
     </div>

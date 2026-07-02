@@ -2,7 +2,7 @@
  * Headtower local database schema (server-only).
  *
  * Headscale stays the source of truth for tailnet data; this database holds
- * ONLY Headtower's own state. Eight tables:
+ * ONLY Headtower's own state. Nine tables:
  *
  *   audit_log         append-only operator action trail (one row per mutation)
  *   app_user          Headtower accounts (OIDC `sub` -> role), distinct from tailnet users
@@ -23,6 +23,10 @@
  *                     device, which SSH user, when a token was minted (see
  *                     @/lib/ssh-sessions). Start-only, by design: see that table's
  *                     doc comment below for why no end time is recorded.
+ *   node_metadata     Headtower-local annotations on a Headscale node - operator
+ *                     note, environment, and free-form labels (see
+ *                     @/lib/db/node-metadata). These live ONLY here and are never
+ *                     pushed to Headscale; the node id is the shared key.
  *
  * The Drizzle table definitions below are the typed query surface; {@link SCHEMA_DDL}
  * is the matching idempotent DDL the client runs on first import to create the
@@ -30,11 +34,12 @@
  *
  * Exposed surface:
  *   tables   auditLog, appUser, session, appSettings, oidcProvider, personalApiKey,
- *            snapshots, sshSession
+ *            snapshots, sshSession, nodeMetadata
  *   types    AuditEntry / NewAuditEntry, AppUser / NewAppUser,
  *            SessionRecord / NewSessionRecord, AppSetting / NewAppSetting,
  *            OidcProviderRow / NewOidcProviderRow, PersonalApiKeyRow / NewPersonalApiKeyRow,
- *            Snapshot / NewSnapshot, SshSession / NewSshSession, AuditDetail
+ *            Snapshot / NewSnapshot, SshSession / NewSshSession,
+ *            NodeMetadataRow / NewNodeMetadataRow, AuditDetail
  *   ddl      SCHEMA_DDL
  */
 
@@ -42,6 +47,10 @@ import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 // Type-only: erased at build, so importing rbac here adds no runtime coupling
 // (and does not trip rbac's server-only import guard).
 import type { Role } from "@/lib/rbac";
+// Type-only: the environment / label value shapes live in the pure, client-safe
+// companion module so both the server helpers and the browser dialog can share
+// them without pulling `node:sqlite` into the client bundle.
+import type { NodeEnvironment } from "./node-metadata-types";
 
 /** Free-form structured context attached to an audit entry (stored as JSON). */
 export type AuditDetail = Record<string, unknown>;
@@ -229,6 +238,29 @@ export const snapshots = sqliteTable("snapshot", {
   users: integer("users").notNull(),
 });
 
+/**
+ * Headtower-local annotations on a Headscale node, keyed by the node's Headscale
+ * id (a string). This is the {@link https://github.com/tale/headplane Headplane}
+ * pattern: notes, an environment tag, and free-form labels that help operators
+ * organise a fleet WITHOUT touching the control plane. None of it is ever pushed
+ * to Headscale - deleting the node here (see `@/app/(app)/machines/actions`) is
+ * what drops the row, since there is no Headscale foreign key to cascade from.
+ * A node with no annotations simply has no row.
+ */
+export const nodeMetadata = sqliteTable("node_metadata", {
+  /** Headscale node id (string); the shared key with the control plane. */
+  nodeId: text("node_id").primaryKey(),
+  /** Free-form operator note, capped at 2000 chars by the write path. */
+  note: text("note"),
+  /** Deployment environment, or null when unset. See `NodeEnvironment`. */
+  environment: text("environment").$type<NodeEnvironment>(),
+  /** Free-form labels (deduped, <=16, each <=32 chars), stored as a JSON array. */
+  labels: text("labels", { mode: "json" }).$type<string[]>(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
 export type AuditEntry = typeof auditLog.$inferSelect;
 export type NewAuditEntry = typeof auditLog.$inferInsert;
 export type AppUser = typeof appUser.$inferSelect;
@@ -245,6 +277,8 @@ export type Snapshot = typeof snapshots.$inferSelect;
 export type NewSnapshot = typeof snapshots.$inferInsert;
 export type SshSession = typeof sshSession.$inferSelect;
 export type NewSshSession = typeof sshSession.$inferInsert;
+export type NodeMetadataRow = typeof nodeMetadata.$inferSelect;
+export type NewNodeMetadataRow = typeof nodeMetadata.$inferInsert;
 
 /**
  * Idempotent DDL run once per process on import (see ./client). Mirrors the
@@ -336,4 +370,12 @@ CREATE TABLE IF NOT EXISTS snapshot (
   users INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_snapshot_ts ON snapshot (ts);
+
+CREATE TABLE IF NOT EXISTS node_metadata (
+  node_id TEXT PRIMARY KEY,
+  note TEXT,
+  environment TEXT,
+  labels TEXT,
+  updated_at INTEGER NOT NULL
+);
 `;

@@ -28,11 +28,38 @@ export {
 } from "./snapshots";
 
 export {
+  getNodeMetadata,
+  getNodeMetadataMap,
+  upsertNodeMetadata,
+  deleteNodeMetadata,
+  deleteNodeMetadataMany,
+  type NodeMetadataInput,
+} from "./node-metadata";
+
+export {
+  ENVIRONMENTS,
+  NOTE_MAX_LENGTH,
+  LABEL_MAX_COUNT,
+  LABEL_MAX_LENGTH,
+  EMPTY_NODE_METADATA,
+  hasMetadata,
+  environmentMeta,
+  normalizeEnvironment,
+  normalizeNote,
+  normalizeLabels,
+  labelColor,
+  type NodeEnvironment,
+  type EnvironmentMeta,
+  type NodeMetadataValue,
+} from "./node-metadata-types";
+
+export {
   auditLog,
   appUser,
   session,
   appSettings,
   snapshots,
+  nodeMetadata,
   SCHEMA_DDL,
   type AuditEntry,
   type NewAuditEntry,
@@ -44,5 +71,7 @@ export {
   type NewAppSetting,
   type Snapshot,
   type NewSnapshot,
+  type NodeMetadataRow,
+  type NewNodeMetadataRow,
   type AuditDetail,
 } from "./schema";

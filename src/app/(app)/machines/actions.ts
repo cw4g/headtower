@@ -13,6 +13,7 @@ import { revalidatePath } from "next/cache";
 import { nodes } from "@/lib/headscale";
 import { audit, authorize } from "@/lib/authz";
 import { can } from "@/lib/rbac";
+import { deleteNodeMetadata, deleteNodeMetadataMany } from "@/lib/db";
 import { describeHeadscaleError } from "./errors";
 
 /** Outcome of a node mutation, shaped for the dialog's inline error handling. */
@@ -143,6 +144,16 @@ export async function deleteNode(id: string): Promise<NodeActionResult> {
     await nodes.remove(id);
   } catch (err) {
     return { status: "error", error: describeHeadscaleError(err) };
+  }
+
+  // The node is gone from the control plane; drop its Headtower-local metadata
+  // too so a future node reusing this id can't inherit stale notes/labels.
+  // Best-effort: a cleanup failure must not undo a delete the control plane
+  // already accepted.
+  try {
+    await deleteNodeMetadata(id);
+  } catch (err) {
+    console.error(`deleteNode: metadata cleanup failed for ${id}`, err);
   }
 
   await audit(gate.session, {
@@ -318,6 +329,7 @@ export async function bulkDeleteNodes(
   }
 
   const errors: BulkFailure[] = [];
+  const removed: string[] = [];
   let succeeded = 0;
   for (const id of ids) {
     if (!can(gate.session.role, "machines.write")) {
@@ -326,10 +338,20 @@ export async function bulkDeleteNodes(
     }
     try {
       await nodes.remove(id);
+      removed.push(id);
       succeeded++;
     } catch (err) {
       errors.push({ id, error: describeHeadscaleError(err) });
     }
+  }
+
+  // Clean up Headtower-local metadata for the nodes that were actually removed.
+  // Best-effort: never let a cleanup failure mask a delete the control plane
+  // already accepted.
+  try {
+    await deleteNodeMetadataMany(removed);
+  } catch (err) {
+    console.error("bulkDeleteNodes: metadata cleanup failed", err);
   }
 
   await audit(gate.session, {

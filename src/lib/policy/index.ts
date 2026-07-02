@@ -26,3 +26,17 @@ export {
   type HostEntry,
   type AutoApprovers,
 } from "./model";
+
+export {
+  lintPolicy,
+  type LintFinding,
+  type LintSeverity,
+  type LintOptions,
+} from "./lint";
+
+export {
+  evaluateReachability,
+  type EvalQuery,
+  type EvalResult,
+  type EvalMatch,
+} from "./eval";

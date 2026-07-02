@@ -14,6 +14,11 @@ import {
 } from "@/components/ui/table";
 import { StatusDot } from "@/components/ui/status-dot";
 import { Chip, Tag } from "@/components/ui/chip";
+import {
+  EnvironmentBadge,
+  NodeLabelChips,
+} from "@/components/machines/node-metadata-dialog";
+import type { NodeMetadataValue } from "@/lib/db/node-metadata-types";
 import { NodeActionsMenu } from "@/components/machines/node-actions-menu";
 import { MachinesToolbar } from "@/components/machines/machines-toolbar";
 import { BulkActionBar } from "@/components/machines/bulk-action-bar";
@@ -56,6 +61,7 @@ export function MachinesTable({
   nodes,
   canManage = false,
   knownTags,
+  metadata,
 }: {
   nodes: NodeView[];
   /**
@@ -66,6 +72,12 @@ export function MachinesTable({
   canManage?: boolean;
   /** Tailnet-wide tag suggestions for each row's Edit tags dialog. */
   knownTags?: string[];
+  /**
+   * Headtower-local per-node metadata (note / environment / labels), keyed by
+   * node id. Optional and read-only here: rows surface the environment badge and
+   * label chips as quiet context next to the ACL tags.
+   */
+  metadata?: Record<string, NodeMetadataValue>;
 }) {
   const router = useRouter();
   const filter = useMachinesFilter(nodes);
@@ -217,6 +229,7 @@ export function MachinesTable({
                   node={node}
                   canManage={canManage}
                   knownTags={knownTags}
+                  metadata={metadata?.[node.id]}
                   selected={selected.has(node.id)}
                   onToggle={(shiftKey) => toggleRow(node.id, index, shiftKey)}
                   onOpen={() => router.push(`/machines/${node.id}`)}
@@ -242,6 +255,7 @@ function MachineRow({
   node,
   canManage,
   knownTags,
+  metadata,
   selected,
   onToggle,
   onOpen,
@@ -249,6 +263,7 @@ function MachineRow({
   node: NodeView;
   canManage: boolean;
   knownTags?: string[];
+  metadata?: NodeMetadataValue;
   selected: boolean;
   onToggle: (shiftKey: boolean) => void;
   onOpen: () => void;
@@ -257,6 +272,9 @@ function MachineRow({
   const edge = edgeStatus(node);
   const visibleTags = node.tags.slice(0, 2);
   const extraTags = node.tags.length - visibleTags.length;
+  const env = metadata?.environment ?? null;
+  const labels = metadata?.labels ?? [];
+  const hasMeta = env != null || labels.length > 0;
 
   return (
     <Tr
@@ -337,9 +355,10 @@ function MachineRow({
         {!node.ipv4 && !node.ipv6 && <span className="text-ink-faint">—</span>}
       </Td>
 
-      {/* Tags */}
+      {/* Tags - ACL tags first, then quiet Headtower-local metadata chips
+          (environment badge + labels) as context next to them. */}
       <Td>
-        {node.tags.length === 0 && node.invalidTags.length === 0 ? (
+        {node.tags.length === 0 && node.invalidTags.length === 0 && !hasMeta ? (
           <span className="text-ink-faint">—</span>
         ) : (
           <div className="flex flex-wrap items-center gap-1">
@@ -356,6 +375,8 @@ function MachineRow({
                 {node.invalidTags.length} invalid
               </Chip>
             )}
+            <EnvironmentBadge environment={env} size="sm" />
+            <NodeLabelChips labels={labels} max={2} />
           </div>
         )}
       </Td>
