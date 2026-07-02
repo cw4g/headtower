@@ -23,14 +23,17 @@ const OPTIONS: { value: Theme; label: string; icon: LucideIcon }[] = [
  * jump). Selecting an option persists the cookie and flips the `dark` class
  * live; while `system` is active it also tracks OS changes so the console
  * follows along. When {@link collapsed} (or below `md`) the segments stack
- * vertically to fit the icon rail.
+ * vertically to fit the icon rail; {@link horizontal} forces the compact
+ * side-by-side layout regardless of width (used in the shared footer row).
  */
 export function ThemeToggle({
   initialTheme = DEFAULT_THEME,
   collapsed = false,
+  horizontal = false,
 }: {
   initialTheme?: Theme;
   collapsed?: boolean;
+  horizontal?: boolean;
 }) {
   const [theme, setTheme] = React.useState<Theme>(initialTheme);
 
@@ -53,7 +56,7 @@ export function ThemeToggle({
     <div
       className={cn(
         "flex items-center gap-0.5 self-center rounded-control border border-line bg-surface-2 p-0.5",
-        collapsed ? "flex-col" : "flex-col md:flex-row",
+        collapsed ? "flex-col" : horizontal ? "flex-row" : "flex-col md:flex-row",
       )}
       role="radiogroup"
       aria-label="Color theme"

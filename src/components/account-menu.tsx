@@ -28,8 +28,9 @@ export interface Account {
 /**
  * The sidebar-footer account control. In OIDC mode it's a dropdown with the
  * identity and a Sign out action; in operator mode it's a static role chip
- * (nothing to sign out of). When {@link collapsed} (or below `md`) it shrinks to
- * just the avatar so it fits the icon rail.
+ * (nothing to sign out of). When {@link collapsed} it shrinks to just the avatar
+ * so it fits the icon rail; otherwise it shows the full-width identity (in the
+ * expanded sidebar column and the mobile nav drawer alike).
  */
 export function AccountMenu({
   account,
@@ -46,13 +47,11 @@ export function AccountMenu({
           "flex items-center rounded-control border border-line bg-surface-2 text-xs text-ink-muted",
           collapsed
             ? "justify-center p-1"
-            : "justify-center p-1 md:justify-start md:gap-1.5 md:px-2 md:py-1",
+            : "justify-start gap-1.5 px-2 py-1",
         )}
       >
         <Avatar account={account} />
-        <span className={cn(collapsed ? "hidden" : "hidden md:inline")}>
-          {account.roleLabel}
-        </span>
+        {!collapsed && <span>{account.roleLabel}</span>}
       </span>
     );
   }
@@ -68,18 +67,13 @@ export function AccountMenu({
             "flex items-center rounded-control border border-line-strong bg-surface-2 text-sm text-ink-muted transition-colors hover:border-ink-faint hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beacon-500/40",
             collapsed
               ? "justify-center p-1"
-              : "w-full justify-center p-1 md:justify-start md:gap-2 md:py-1 md:pl-1 md:pr-2",
+              : "w-full justify-start gap-2 py-1 pl-1 pr-2",
           )}
         >
           <Avatar account={account} />
-          <span
-            className={cn(
-              "max-w-32 truncate",
-              collapsed ? "hidden" : "hidden md:inline",
-            )}
-          >
-            {account.name}
-          </span>
+          {!collapsed && (
+            <span className="max-w-32 truncate">{account.name}</span>
+          )}
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="start" className="min-w-56">

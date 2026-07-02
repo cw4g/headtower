@@ -3,11 +3,9 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ArrowUpCircle, Search } from "lucide-react";
 import { BeaconMark } from "@/components/beacon-mark";
-import { AccountMenu, type Account } from "@/components/account-menu";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { Kbd } from "@/components/ui/kbd";
+import type { Account } from "@/components/account-menu";
+import { SidebarFooter } from "@/components/sidebar-footer";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { Theme } from "@/lib/theme";
 import { NAV, isNavActive, persistSidebarCollapsed, type NavItem } from "@/lib/sidebar";
@@ -116,53 +114,17 @@ export function ConsoleSidebar({
         ))}
       </nav>
 
-      {/* Footer: command trigger, theme toggle, account. Icons when collapsed. */}
-      <div className="flex shrink-0 flex-col gap-2 border-t border-line p-2">
-        <CommandTrigger collapsed={collapsed} onOpen={openCommand} />
-
-        <ThemeToggle initialTheme={theme} collapsed={collapsed} />
-
-        {account && <AccountMenu account={account} collapsed={collapsed} />}
-
-        {updateAvailable && collapsed && (
-          <Tooltip
-            content={
-              latestVersion ? `Update available - v${latestVersion}` : "Update available"
-            }
-            side="right"
-          >
-            <a
-              href="https://headtower.niheshr.com/changelog"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-center rounded-control p-1.5 text-beacon-500 transition-colors hover:bg-surface-2"
-              aria-label="Update available"
-            >
-              <ArrowUpCircle className="h-4 w-4" aria-hidden />
-            </a>
-          </Tooltip>
-        )}
-
-        {!collapsed && (
-          <div className="hidden md:flex md:flex-col md:gap-1 md:px-1">
-            {updateAvailable && (
-              <a
-                href="https://headtower.niheshr.com/changelog"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 rounded-control border border-beacon-500/30 bg-beacon-500/10 px-2 py-1 text-[10px] font-medium text-beacon-500 transition-colors hover:bg-beacon-500/15"
-              >
-                <ArrowUpCircle className="h-3 w-3 shrink-0" aria-hidden />
-                Update available
-                {latestVersion && <span className="data">v{latestVersion}</span>}
-              </a>
-            )}
-            <span className="data text-[10px] text-ink-faint">
-              v{appVersion}
-            </span>
-          </div>
-        )}
-      </div>
+      {/* Footer: shared command/theme/account/version block. Icon rail when
+          collapsed; the drawer renders the same component (see SidebarFooter). */}
+      <SidebarFooter
+        account={account}
+        theme={theme}
+        appVersion={appVersion}
+        updateAvailable={updateAvailable}
+        latestVersion={latestVersion}
+        collapsed={collapsed}
+        onOpenCommand={openCommand}
+      />
     </aside>
   );
 }
@@ -214,49 +176,4 @@ function NavLink({
     );
   }
   return link;
-}
-
-/** The Cmd-K trigger: full search field when open, an icon when collapsed. */
-function CommandTrigger({
-  collapsed,
-  onOpen,
-}: {
-  collapsed: boolean;
-  onOpen: () => void;
-}) {
-  const button = (
-    <button
-      type="button"
-      onClick={onOpen}
-      aria-label="Search or jump to a section"
-      className={cn(
-        "group flex h-9 items-center rounded-control border border-line-strong bg-surface-2 text-ink-faint transition-colors hover:border-ink-faint hover:text-ink-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beacon-500/40",
-        collapsed
-          ? "justify-center px-0"
-          : "justify-center px-0 md:justify-start md:gap-2 md:px-2.5",
-      )}
-    >
-      <Search className="h-4 w-4 shrink-0" aria-hidden />
-      <span
-        className={cn(
-          "flex-1 text-left text-sm",
-          collapsed ? "hidden" : "hidden md:inline",
-        )}
-      >
-        Search or jump
-      </span>
-      <Kbd className={cn(collapsed ? "hidden" : "hidden md:inline-flex")}>
-        ⌘K
-      </Kbd>
-    </button>
-  );
-
-  if (collapsed) {
-    return (
-      <Tooltip content="Search or jump  ⌘K" side="right">
-        {button}
-      </Tooltip>
-    );
-  }
-  return button;
 }

@@ -6,6 +6,10 @@ import { usePathname } from "next/navigation";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Menu, X } from "lucide-react";
 import { BeaconMark } from "@/components/beacon-mark";
+import type { Account } from "@/components/account-menu";
+import { COMMAND_EVENT } from "@/components/console-sidebar";
+import { SidebarFooter } from "@/components/sidebar-footer";
+import type { Theme } from "@/lib/theme";
 import { NAV, isNavActive } from "@/lib/sidebar";
 import { cn } from "@/lib/cn";
 
@@ -23,8 +27,25 @@ import { cn } from "@/lib/cn";
  * globals.css already collapses every transition/animation duration for
  * operators who've asked for less motion, so no extra branching is needed
  * here for that.
+ *
+ * Below the scrolling nav it pins the same `SidebarFooter` the desktop rail uses
+ * (search + theme, account, version), so the touch layout is not missing those
+ * controls. The account/version props are threaded from `AppShell`, matching
+ * what `ConsoleSidebar` already receives.
  */
-export function MobileNavDrawer() {
+export function MobileNavDrawer({
+  account,
+  theme,
+  appVersion,
+  updateAvailable = false,
+  latestVersion,
+}: {
+  account?: Account | null;
+  theme?: Theme;
+  appVersion?: string;
+  updateAvailable?: boolean;
+  latestVersion?: string | null;
+}) {
   const pathname = usePathname() ?? "";
   const [open, setOpen] = React.useState(false);
   const [entered, setEntered] = React.useState(false);
@@ -37,6 +58,13 @@ export function MobileNavDrawer() {
       setEntered(false);
     };
   }, [open]);
+
+  // The footer's search closes the drawer, then opens the palette via the same
+  // window event the desktop trigger dispatches (the palette listens app-wide).
+  const openCommand = React.useCallback(() => {
+    setOpen(false);
+    window.dispatchEvent(new CustomEvent(COMMAND_EVENT));
+  }, []);
 
   return (
     <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
@@ -114,6 +142,16 @@ export function MobileNavDrawer() {
               );
             })}
           </nav>
+
+          <SidebarFooter
+            account={account}
+            theme={theme}
+            appVersion={appVersion}
+            updateAvailable={updateAvailable}
+            latestVersion={latestVersion}
+            variant="drawer"
+            onOpenCommand={openCommand}
+          />
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>

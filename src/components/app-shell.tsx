@@ -81,7 +81,13 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
             `md`, and its tooltips need hover, which touch can't give it. This
             hamburger opens `MobileNavDrawer`, the full-label equivalent. */}
         <div className="sticky top-0 z-30 flex h-12 shrink-0 items-center gap-3 border-b border-line bg-surface px-4 md:hidden">
-          <MobileNavDrawer />
+          <MobileNavDrawer
+            account={account}
+            theme={theme}
+            appVersion={APP_VERSION}
+            updateAvailable={update.available}
+            latestVersion={update.latestVersion}
+          />
           <span className="flex items-center gap-2 text-sm font-semibold tracking-tight text-ink">
             <BeaconMark className="h-5 w-5 shrink-0" />
             head<span className="text-ink-muted">tower</span>
