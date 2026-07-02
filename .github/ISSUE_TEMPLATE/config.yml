@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/rnihesh/headtower/security/advisories/new
+    about: Report privately - never in a public issue.
+  - name: Documentation
+    url: https://headtower.niheshr.com
+    about: Setup guides, feature docs, and configuration reference.

@@ -84,6 +84,11 @@ cd agent && go run .   # device-metadata + SSH agent
 - **Agent** *(optional)* - a small Go binary using `tsnet` for device metadata and the browser-SSH bridge.
 - **Docs** - a standalone Nextra site under `docs/`, deployed to GitHub Pages.
 
+## Contributing
+
+Bug reports, feature ideas, and PRs welcome - see [CONTRIBUTING.md](./CONTRIBUTING.md).
+Security issues go through [private reporting](./SECURITY.md), never public issues.
+
 ## License
 
 [AGPL-3.0](./LICENSE) © 2026 Nihesh.

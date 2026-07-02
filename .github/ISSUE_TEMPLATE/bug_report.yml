@@ -1,0 +1,41 @@
+name: Bug report
+description: Something in the console is broken or wrong
+labels: [bug]
+body:
+  - type: input
+    id: headtower-version
+    attributes:
+      label: Headtower version
+      description: Bottom of the sidebar, e.g. v0.1.0
+    validations:
+      required: true
+  - type: input
+    id: headscale-version
+    attributes:
+      label: Headscale version
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment
+      options:
+        - Docker Compose
+        - Docker (manual)
+        - Bare metal / pnpm
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you got. Screenshots help.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Container logs around the failure, secrets redacted.
+      render: shell
