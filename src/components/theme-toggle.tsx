@@ -30,10 +30,14 @@ export function ThemeToggle({
   initialTheme = DEFAULT_THEME,
   collapsed = false,
   horizontal = false,
+  cycle = false,
 }: {
   initialTheme?: Theme;
   collapsed?: boolean;
   horizontal?: boolean;
+  /** One compact square that cycles light → system → dark on click - for rows
+   *  where the three-segment control would crowd out its neighbour. */
+  cycle?: boolean;
 }) {
   const [theme, setTheme] = React.useState<Theme>(initialTheme);
 
@@ -52,11 +56,31 @@ export function ThemeToggle({
     applyTheme(next);
   }, []);
 
+  if (cycle) {
+    const idx = OPTIONS.findIndex((o) => o.value === theme);
+    const current = OPTIONS[idx === -1 ? 1 : idx];
+    const next = OPTIONS[(idx + 1) % OPTIONS.length];
+    const Icon = current.icon;
+    return (
+      <button
+        type="button"
+        onClick={() => select(next.value)}
+        aria-label={`Theme: ${current.label}. Switch to ${next.label}`}
+        title={`Theme: ${current.label} - click for ${next.label}`}
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-control border border-line-strong bg-surface-2 text-ink-faint transition-colors hover:border-ink-faint hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beacon-500/40"
+      >
+        <Icon className="h-4 w-4" aria-hidden />
+      </button>
+    );
+  }
+
   return (
     <div
       className={cn(
         "flex items-center gap-0.5 self-center rounded-control border border-line bg-surface-2 p-0.5",
-        collapsed ? "flex-col" : horizontal ? "flex-row" : "flex-col md:flex-row",
+        // In the shared footer row the control sits beside the h-9 search
+        // field - match its height exactly so the row reads as one unit.
+        collapsed ? "flex-col" : horizontal ? "h-9 flex-row" : "flex-col md:flex-row",
       )}
       role="radiogroup"
       aria-label="Color theme"
@@ -73,7 +97,8 @@ export function ThemeToggle({
             title={label}
             onClick={() => select(value)}
             className={cn(
-              "flex h-6 w-6 items-center justify-center rounded-[0.4rem] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beacon-500/40",
+              "flex items-center justify-center rounded-[0.4rem] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beacon-500/40",
+              horizontal ? "h-full w-7" : "h-6 w-6",
               active
                 ? "bg-surface text-ink shadow-sm"
                 : "text-ink-faint hover:text-ink",

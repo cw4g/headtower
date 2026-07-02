@@ -27,7 +27,6 @@ export function SidebarFooter({
   updateAvailable = false,
   latestVersion,
   collapsed = false,
-  variant = "sidebar",
   onOpenCommand,
 }: {
   account?: Account | null;
@@ -40,8 +39,6 @@ export function SidebarFooter({
   latestVersion?: string | null;
   /** Icon-rail layout. Only the collapsed desktop sidebar sets this. */
   collapsed?: boolean;
-  /** Where this footer lives - governs the (meaningless-on-touch) ⌘K chip. */
-  variant?: "sidebar" | "drawer";
   /** Open the command palette (the caller decides how; see component doc). */
   onOpenCommand: () => void;
 }) {
@@ -79,12 +76,8 @@ export function SidebarFooter({
   return (
     <div className="flex shrink-0 flex-col gap-2 border-t border-line p-2">
       <div className="flex items-center gap-1.5">
-        <CommandTrigger
-          onOpen={onOpenCommand}
-          showKbd={variant === "sidebar"}
-          className="min-w-0 flex-1"
-        />
-        <ThemeToggle initialTheme={theme} horizontal />
+        <CommandTrigger onOpen={onOpenCommand} className="min-w-0 flex-1" />
+        <ThemeToggle initialTheme={theme} cycle />
       </div>
 
       {account && <AccountMenu account={account} />}
@@ -110,17 +103,15 @@ export function SidebarFooter({
 
 /**
  * The command-palette trigger: a full search field when expanded, a tooltip'd
- * icon when collapsed. The ⌘K chip is only meaningful with a keyboard, so it is
- * suppressed in the drawer ({@link showKbd}) and below `md` regardless.
+ * icon when collapsed. No ⌘K chip - the palette itself teaches the shortcut,
+ * and the chip would crowd the shared search+theme row.
  */
 function CommandTrigger({
   collapsed = false,
-  showKbd = false,
   onOpen,
   className,
 }: {
   collapsed?: boolean;
-  showKbd?: boolean;
   onOpen: () => void;
   className?: string;
 }) {
@@ -137,11 +128,7 @@ function CommandTrigger({
     >
       <Search className="h-4 w-4 shrink-0" aria-hidden />
       {!collapsed && (
-        <span className="flex-1 truncate text-left text-sm">
-          {/* Sharing a row with the theme switcher leaves ~30px of text budget
-              in the sidebar - the long label only fits in the wider drawer. */}
-          {showKbd ? "Search" : "Search or jump"}
-        </span>
+        <span className="flex-1 truncate text-left text-sm">Search or jump</span>
       )}
     </button>
   );

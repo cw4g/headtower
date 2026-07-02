@@ -149,7 +149,7 @@ export function MobileNavDrawer({
             appVersion={appVersion}
             updateAvailable={updateAvailable}
             latestVersion={latestVersion}
-            variant="drawer"
+           
             onOpenCommand={openCommand}
           />
         </DialogPrimitive.Content>
