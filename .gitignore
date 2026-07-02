@@ -50,3 +50,6 @@ data/
 
 # internal build notes (not shipped)
 NOTES.md
+
+# compound-engineering review artifacts
+.context/

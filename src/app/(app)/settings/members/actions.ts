@@ -11,7 +11,7 @@
 
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
-import { appUser, db } from "@/lib/db";
+import { appUser, db, sqlite } from "@/lib/db";
 import { isRole, type Role } from "@/lib/rbac";
 import { audit, authorize } from "@/lib/authz";
 
@@ -40,20 +40,27 @@ export async function updateMemberRole(
   }
 
   if (target.role === "owner" && nextRole !== "owner") {
-    const owners = await db
-      .select({ id: appUser.id })
-      .from(appUser)
-      .where(eq(appUser.role, "owner"))
-      .all();
-    if (owners.length <= 1) {
+    // Atomic last-owner guard: count-and-demote in one statement so two
+    // concurrent demotions of the two remaining owners can't both pass a
+    // separate check and leave the console with zero owners (an unrecoverable
+    // lockout, since only `owner` holds `members.manage`). SQLite runs a single
+    // statement atomically; a 0-row result means the guard fired.
+    const res = sqlite
+      .prepare(
+        `UPDATE app_user SET role = ?
+           WHERE id = ? AND role = 'owner'
+             AND (SELECT count(*) FROM app_user WHERE role = 'owner') > 1`,
+      )
+      .run(nextRole, memberId);
+    if (res.changes === 0) {
       return {
         status: "error",
         error: "Can't demote the only owner - promote someone else first.",
       };
     }
+  } else {
+    await db.update(appUser).set({ role: nextRole }).where(eq(appUser.id, memberId));
   }
-
-  await db.update(appUser).set({ role: nextRole }).where(eq(appUser.id, memberId));
 
   await audit(gate.session, {
     action: "member.role_change",
@@ -75,21 +82,27 @@ export async function removeMember(memberId: string): Promise<UpdateRoleState> {
   if (!target) {
     return { status: "error", error: "That account no longer exists." };
   }
-  if (target.role === "owner") {
-    const owners = await db
-      .select({ id: appUser.id })
-      .from(appUser)
-      .where(eq(appUser.role, "owner"))
-      .all();
-    if (owners.length <= 1) {
-      return { status: "error", error: "Can't remove the only owner." };
-    }
-  }
   if (memberId === gate.session.user.id) {
     return { status: "error", error: "Can't remove your own account here." };
   }
 
-  await db.delete(appUser).where(eq(appUser.id, memberId));
+  if (target.role === "owner") {
+    // Atomic last-owner guard, same reasoning as updateMemberRole: count-and-
+    // delete in one statement so concurrent owner removals can't both slip
+    // past a separate check and empty the owner role.
+    const res = sqlite
+      .prepare(
+        `DELETE FROM app_user
+           WHERE id = ? AND role = 'owner'
+             AND (SELECT count(*) FROM app_user WHERE role = 'owner') > 1`,
+      )
+      .run(memberId);
+    if (res.changes === 0) {
+      return { status: "error", error: "Can't remove the only owner." };
+    }
+  } else {
+    await db.delete(appUser).where(eq(appUser.id, memberId));
+  }
 
   await audit(gate.session, {
     action: "member.remove",

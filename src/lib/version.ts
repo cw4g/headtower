@@ -62,14 +62,14 @@ async function fetchLatest(): Promise<UpdateCheck> {
     });
     if (!response.ok) return none;
     const json = (await response.json()) as Partial<RemoteVersion>;
-    if (typeof json.version !== "string" || typeof json.sha !== "string") return none;
+    if (typeof json.version !== "string") return none;
 
-    // Prefer the exact commit compare when this build knows its own SHA;
-    // otherwise fall back to a version-string compare (e.g. local dev, or an
-    // image built without the GIT_SHA arg).
-    const available = BUILD_SHA
-      ? json.sha !== BUILD_SHA
-      : json.version !== APP_VERSION;
+    // Compare the published semver against the running one. A SHA compare would
+    // be wrong here: deploy-docs.yml rewrites version.json's sha on every push
+    // to main (docs included), but the image only rebuilds on source changes -
+    // so a sha mismatch fires after any docs edit and cries wolf. The version
+    // bumps only on a real release, which is exactly when an update exists.
+    const available = json.version !== APP_VERSION;
     return { available, latestVersion: json.version };
   } catch {
     return none;
