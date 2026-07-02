@@ -30,9 +30,11 @@ export interface RouteActionState {
  * decides the direction: true adds the CIDR to the node's approved set, false
  * removes it. Both preserve the node's other approvals.
  *
- * `approvedRoutes` is the node's approved set as the caller (the routes board)
- * last read it, threaded through so `routes.approve`/`revoke` can skip an
- * extra GET - see the last-writer-wins note on those functions.
+ * A single server-side `nodes.get` validates that the CIDR is one the node is
+ * actually advertising (rejecting a crafted request otherwise) and bounds the
+ * written set to routes the node carries. `approvedRoutes` - the caller's
+ * last-read approved snapshot - is still the write base, keeping the
+ * last-writer-wins race-shrink; the audit records the exact set written.
  */
 export async function setRouteApproval(
   nodeId: string,
@@ -49,12 +51,27 @@ export async function setRouteApproval(
     return { status: "error", error: gate.reason };
   }
 
+  let approved: string[] = [];
   try {
-    if (approve) {
-      await routes.approve(nodeId, cidr, approvedRoutes);
-    } else {
-      await routes.revoke(nodeId, cidr, approvedRoutes);
+    // A single server-side read (nodes.get, via forNode) gives the node's
+    // authoritative advertised + approved sets. We validate against these
+    // rather than trusting the client's snapshot, while still using that
+    // snapshot as the write base so the last-writer-wins race-shrink stands.
+    const state = await routes.forNode(nodeId);
+    if (approve && !state.available.includes(cidr)) {
+      return {
+        status: "error",
+        error: "This node is not advertising that route.",
+      };
     }
+    // Keep only routes the node actually carries (advertised or already
+    // approved), so a tampered snapshot can't smuggle in an unadvertised CIDR.
+    const carried = new Set([...state.approved, ...state.available]);
+    const base = approvedRoutes.filter((route) => carried.has(route));
+    const next = approve
+      ? [...new Set([...base, cidr])].sort()
+      : base.filter((route) => route !== cidr);
+    approved = (await routes.setApproved(nodeId, next)).approved;
   } catch (err) {
     return { status: "error", error: describeHeadscaleError(err) };
   }
@@ -63,7 +80,8 @@ export async function setRouteApproval(
     action: approve ? "routes.approve" : "routes.revoke",
     targetType: "node",
     targetId: nodeId,
-    detail: { cidr },
+    // The exact approved set written to Headscale, not the client's labels.
+    detail: { cidr, approved },
   });
   revalidatePath("/routes");
   return { status: "success" };
@@ -117,9 +135,9 @@ export async function setExitApproval(
 export interface ApproveAllEntry {
   nodeId: string;
   nodeName: string;
-  /** CIDRs newly approved on this node - surfaced in the confirm dialog and audit detail. */
+  /** Pending CIDRs to approve - shown in the confirm dialog and validated server-side against what the node advertises. */
   cidrs: string[];
-  /** Full approved set to write for this node (existing approvals + `cidrs`). */
+  /** The caller's last-read approved snapshot, used as the write base (bounded server-side to routes the node carries). */
   approvedRoutes: string[];
 }
 
@@ -141,9 +159,26 @@ export async function approveAllPending(
     return { status: "error", error: gate.reason };
   }
 
+  const written: { nodeId: string; nodeName: string; approved: string[] }[] =
+    [];
   try {
     for (const entry of entries) {
-      await routes.setApproved(entry.nodeId, entry.approvedRoutes);
+      // One server-side read per node validates the pending CIDRs against what
+      // the node is actually advertising and bounds the written set, matching
+      // `setRouteApproval`.
+      const state = await routes.forNode(entry.nodeId);
+      const carried = new Set([...state.approved, ...state.available]);
+      const base = entry.approvedRoutes.filter((route) => carried.has(route));
+      const toApprove = entry.cidrs.filter((cidr) =>
+        state.available.includes(cidr),
+      );
+      const next = [...new Set([...base, ...toApprove])].sort();
+      const result = await routes.setApproved(entry.nodeId, next);
+      written.push({
+        nodeId: entry.nodeId,
+        nodeName: entry.nodeName,
+        approved: result.approved,
+      });
     }
   } catch (err) {
     return { status: "error", error: describeHeadscaleError(err) };
@@ -157,13 +192,8 @@ export async function approveAllPending(
     targetType: "node",
     targetId: single?.nodeId,
     targetName: single?.nodeName,
-    detail: {
-      nodes: entries.map((entry) => ({
-        nodeId: entry.nodeId,
-        nodeName: entry.nodeName,
-        cidrs: entry.cidrs,
-      })),
-    },
+    // The exact approved set written per node, not the client's labels.
+    detail: { nodes: written },
   });
   revalidatePath("/routes");
   return { status: "success" };

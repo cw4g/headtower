@@ -142,19 +142,26 @@ export function ReachabilityTester({
       </div>
 
       {result?.status === "error" && (
-        <p className="flex items-center gap-1.5 text-xs text-critical-500">
+        <p
+          role="alert"
+          className="flex items-center gap-1.5 text-xs text-critical-500"
+        >
           <TriangleAlert className="h-3.5 w-3.5" aria-hidden />
           {result.error}
         </p>
       )}
 
+      {/* The verdict is a live region so a screen reader announces each new
+          ALLOW/DENY result (and the unsaved-edit delta) as it lands. */}
       {result?.status === "success" && result.saved && (
-        <ResultBlock
-          dirty={dirty && result.edited != null}
-          saved={result.saved}
-          edited={result.edited ?? null}
-          delta={result.delta ?? "same"}
-        />
+        <div role="status" aria-live="polite">
+          <ResultBlock
+            dirty={dirty && result.edited != null}
+            saved={result.saved}
+            edited={result.edited ?? null}
+            delta={result.delta ?? "same"}
+          />
+        </div>
       )}
     </div>
   );

@@ -22,7 +22,8 @@ export const COMMAND_EVENT = "headtower:command";
  * can render the right width on first paint), a vertical nav in the middle with
  * a beacon accent on the active view, and the account / theme / command controls
  * pinned to the footer. Collapsed it becomes a 64px icon rail with tooltips;
- * below `md` it is always the icon rail so small screens stay usable.
+ * below `md` it is hidden entirely - small screens use the mobile header +
+ * drawer (see `AppShell`/`MobileNavDrawer`) instead.
  */
 export function ConsoleSidebar({
   account,
@@ -73,9 +74,10 @@ export function ConsoleSidebar({
     <aside
       data-collapsed={collapsed}
       className={cn(
-        "grid-field z-40 flex h-full shrink-0 flex-col border-r border-line bg-surface transition-[width] duration-200 ease-out",
-        // Below md the rail is always icon-only so the layout never crowds; at md
-        // and up it honours the collapse state (icon rail or full column).
+        "grid-field z-40 hidden h-full shrink-0 flex-col border-r border-line bg-surface transition-[width] duration-200 ease-out md:flex",
+        // Below md the rail is hidden entirely - small screens use the mobile
+        // header + drawer instead; at md and up it honours the collapse state
+        // (icon rail or full column).
         collapsed ? "w-16" : "w-16 md:w-[220px]",
       )}
     >
@@ -165,7 +167,7 @@ export function ConsoleSidebar({
   );
 }
 
-/** A single nav row. Collapsed (or below md) it is an icon with a tooltip. */
+/** A single nav row. Collapsed it is an icon with a tooltip. */
 function NavLink({
   item,
   active,

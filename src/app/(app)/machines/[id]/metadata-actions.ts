@@ -75,13 +75,22 @@ export async function saveNodeMetadata(
       error: `Each label must be ${LABEL_MAX_LENGTH} characters or fewer.`,
     };
   }
-  const labels = normalizeLabels(rawLabels);
-  if (labels.length > LABEL_MAX_COUNT) {
+  // Count the meaningful labels (trimmed, non-blank, deduped) up front:
+  // `normalizeLabels` silently caps at LABEL_MAX_COUNT, so checking its output
+  // can never catch an over-limit submission. Reject rather than truncate.
+  const distinctLabels = new Set(
+    rawLabels
+      .filter((l): l is string => typeof l === "string")
+      .map((l) => l.trim())
+      .filter((l) => l !== ""),
+  );
+  if (distinctLabels.size > LABEL_MAX_COUNT) {
     return {
       status: "error",
       error: `Keep ${LABEL_MAX_COUNT} labels or fewer.`,
     };
   }
+  const labels = normalizeLabels(rawLabels);
 
   const environment = normalizeEnvironment(input.environment);
 
