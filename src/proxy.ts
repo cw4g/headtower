@@ -57,9 +57,17 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   if (payload) return NextResponse.next();
 
   // No valid session: send to /login, remembering where they were headed.
-  const loginUrl = new URL("/login", request.nextUrl);
-  const returnTo = pathname + request.nextUrl.search;
-  if (returnTo && returnTo !== "/") loginUrl.searchParams.set("next", returnTo);
+  // Next strips the configured basePath (HEADTOWER_BASE_PATH, e.g. /admin) from
+  // `pathname` here and does NOT re-add it to a redirect we build ourselves, so
+  // prepend it by hand - otherwise the Location is a bare `/login` that lands
+  // outside the app mount (a 404 from whatever else serves the root path). Read
+  // it from the env (as login/callback does), the authoritative runtime source.
+  const basePath = process.env.HEADTOWER_BASE_PATH?.trim() || "";
+  const loginUrl = new URL(`${basePath}/login`, request.nextUrl);
+  const returnTo = basePath + pathname + request.nextUrl.search;
+  if (returnTo && returnTo !== "/" && returnTo !== `${basePath}/`) {
+    loginUrl.searchParams.set("next", returnTo);
+  }
   return NextResponse.redirect(loginUrl);
 }
 
