@@ -32,6 +32,12 @@ ENV HEADTOWER_DB_PATH=/app/data/headtower.db
 # @/lib/version). Pass at build time: --build-arg GIT_SHA=$(git rev-parse HEAD)
 ARG GIT_SHA=""
 ENV HEADTOWER_GIT_SHA=$GIT_SHA
+# Carry the sub-path mount into the RUNTIME env too, not just the build: the
+# proxy's login redirect and the OIDC redirect_uri read it at request time, so
+# the published image must know its own base path without compose passing it.
+# Empty by default (root); the CI build passes /admin for the published image.
+ARG HEADTOWER_BASE_PATH=""
+ENV HEADTOWER_BASE_PATH=$HEADTOWER_BASE_PATH
 RUN mkdir -p /app/data
 # Next.js "standalone" output: a minimal self-contained server.
 COPY --from=build /app/.next/standalone ./

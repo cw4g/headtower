@@ -54,6 +54,7 @@ jobs:
           push: true
           build-args: |
             GIT_SHA=${{ github.sha }}
+            HEADTOWER_BASE_PATH=/admin
           tags: |
             ${{ env.APP_IMAGE }}:latest
             ${{ env.APP_IMAGE }}:sha-${{ github.sha }}
