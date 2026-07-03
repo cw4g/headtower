@@ -14,79 +14,42 @@
  */
 
 import * as React from "react";
-import { Terminal, type ITheme } from "@xterm/xterm";
+import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { TriangleAlert } from "lucide-react";
 import { mintSshToken } from "@/app/(app)/machines/[id]/terminal/actions";
+import { resolveTheme } from "@/components/terminal/terminal-themes";
 import { cn } from "@/lib/cn";
 
-export interface SshTerminalProps {
-  /** Node hostname (MagicDNS) or tailnet IP to dial on port 22. */
-  host: string;
-  /** SSH user to present to the target. */
-  user: string;
-  className?: string;
-}
+export type ConnectionState = "connecting" | "connected" | "closed" | "error";
 
-type ConnectionState = "connecting" | "connected" | "closed" | "error";
-
-const STATE_LABEL: Record<ConnectionState, string> = {
+export const STATE_LABEL: Record<ConnectionState, string> = {
   connecting: "Connecting…",
   connected: "Connected",
   closed: "Session closed",
   error: "Connection error",
 };
 
-const STATE_DOT: Record<ConnectionState, string> = {
+export const STATE_DOT: Record<ConnectionState, string> = {
   connecting: "bg-warn-500 animate-pulse",
   connected: "bg-online-500",
   closed: "bg-ink-faint",
   error: "bg-critical-500",
 };
 
-/** Read a resolved CSS custom property off the root element, for the canvas
- *  theme (which needs literal colors, not `var(...)`). */
-function cssVar(name: string, fallback: string): string {
-  if (typeof window === "undefined") return fallback;
-  const value = getComputedStyle(document.documentElement)
-    .getPropertyValue(name)
-    .trim();
-  return value || fallback;
-}
-
-/**
- * The terminal's own ANSI 16-color palette. Distinct from the console's
- * schematic "one accent" chrome by necessity - real shell output (ls, git,
- * vim, htop...) relies on a full palette to stay legible - but anchored to
- * the console's surface/ink for background and text, and beacon for cursor.
- */
-function buildTheme(): ITheme {
-  const background = cssVar("--surface-2", "#1f262e");
-  const foreground = cssVar("--ink", "#e6edf3");
-  return {
-    background,
-    foreground,
-    cursor: "#f5b544",
-    cursorAccent: background,
-    selectionBackground: "rgba(245, 181, 68, 0.25)",
-    black: background,
-    brightBlack: cssVar("--ink-faint", "#646f7d"),
-    white: foreground,
-    brightWhite: "#ffffff",
-    red: "#f43f5e",
-    brightRed: "#fb7185",
-    green: "#34d399",
-    brightGreen: "#6ee7b7",
-    yellow: "#f5b544",
-    brightYellow: "#ffd98a",
-    blue: "#60a5fa",
-    brightBlue: "#93c5fd",
-    magenta: "#c084fc",
-    brightMagenta: "#d8b4fe",
-    cyan: "#22d3ee",
-    brightCyan: "#67e8f9",
-  };
+export interface SshTerminalProps {
+  /** Node hostname (MagicDNS) or tailnet IP to dial on port 22. */
+  host: string;
+  /** SSH user to present to the target. */
+  user: string;
+  /** Terminal color-scheme id (see terminal-themes). */
+  themeId: string;
+  /** Notifies the parent chrome (toolbar status dot) of connection changes. */
+  onStatusChange?: (state: ConnectionState) => void;
+  /** Incrementing this clears the terminal scrollback (toolbar "Clear"). */
+  clearSignal?: number;
+  className?: string;
 }
 
 /** `${wss|ws}://${host}${path}?token=...` - the agent websocket, reached
@@ -103,10 +66,39 @@ interface AgentTextMessage {
 }
 
 /** A live SSH session in an xterm.js terminal, bridged over the agent's websocket. */
-export function SshTerminal({ host, user, className }: SshTerminalProps) {
+export function SshTerminal({
+  host,
+  user,
+  themeId,
+  onStatusChange,
+  clearSignal = 0,
+  className,
+}: SshTerminalProps) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
+  const termRef = React.useRef<Terminal | null>(null);
+  // The theme at mount time, for the initial paint, without themeId becoming a
+  // dependency of the connect effect (a theme change must never reconnect). Its
+  // initializer captures the current value; live changes are handled by the
+  // in-place re-theme effect below, so a slightly stale start is corrected at
+  // once and never observed.
+  const themeIdRef = React.useRef(themeId);
   const [state, setState] = React.useState<ConnectionState>("connecting");
   const [detail, setDetail] = React.useState<string | null>(null);
+
+  // Bubble connection state to the parent toolbar's status indicator.
+  React.useEffect(() => {
+    onStatusChange?.(state);
+  }, [state, onStatusChange]);
+
+  // Re-theme a live terminal in place - theme changes must not drop the shell.
+  React.useEffect(() => {
+    if (termRef.current) termRef.current.options.theme = resolveTheme(themeId);
+  }, [themeId]);
+
+  // Clear scrollback on demand (toolbar "Clear"); the initial 0 is a no-op.
+  React.useEffect(() => {
+    if (clearSignal > 0) termRef.current?.clear();
+  }, [clearSignal]);
 
   React.useEffect(() => {
     const container = containerRef.current;
@@ -126,8 +118,9 @@ export function SshTerminal({ host, user, className }: SshTerminalProps) {
       fontFamily:
         'var(--font-mono), ui-monospace, "SF Mono", Menlo, monospace',
       scrollback: 5000,
-      theme: buildTheme(),
+      theme: resolveTheme(themeIdRef.current),
     });
+    termRef.current = term;
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(container);
@@ -221,32 +214,31 @@ export function SshTerminal({ host, user, className }: SshTerminalProps) {
       dataListener.dispose();
       socket?.close();
       term.dispose();
+      termRef.current = null;
     };
   }, [host, user]);
 
+  const themeBackground = resolveTheme(themeId).background ?? undefined;
+
   return (
-    <div
-      className={cn(
-        "flex flex-col overflow-hidden rounded-card border border-line-strong bg-surface-2",
-        className,
-      )}
-    >
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-3 py-1.5">
-        <span className="data text-xs text-ink-muted">
-          <span className="text-ink">{user}</span>@<span className="text-ink">{host}</span>
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className={cn("h-1.5 w-1.5 rounded-full", STATE_DOT[state])} aria-hidden />
-          <span className="text-xs text-ink-muted">{STATE_LABEL[state]}</span>
-        </span>
-      </div>
+    <div className="flex min-h-0 flex-1 flex-col">
       {detail && state !== "connected" && (
         <p className="flex shrink-0 items-start gap-1.5 border-b border-line bg-critical-500/10 px-3 py-2 text-xs text-critical-500">
           <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
           <span>{detail}</span>
         </p>
       )}
-      <div ref={containerRef} className="min-h-0 flex-1 p-2" />
+      {/* The terminal fills a BOUNDED parent (see TerminalConsole's fixed
+          height). Its own background is painted to match the active theme so
+          the padding around the xterm canvas doesn't flash the card surface. */}
+      <div
+        ref={containerRef}
+        className={cn("min-h-0 flex-1 overflow-hidden p-2", className)}
+        style={{ background: themeBackground }}
+      />
+      <span className="sr-only" role="status">
+        {STATE_LABEL[state]}
+      </span>
     </div>
   );
 }

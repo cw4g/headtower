@@ -90,11 +90,7 @@ export default async function MachineTerminalPage({
       </div>
 
       {sshHost ? (
-        <TerminalConsole
-          host={sshHost}
-          defaultUser={initialUser}
-          className="min-h-[70vh]"
-        />
+        <TerminalConsole host={sshHost} defaultUser={initialUser} />
       ) : (
         <EmptyState
           title="No address to connect to"
