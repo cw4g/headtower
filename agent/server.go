@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
+	"errors"
 	"log"
+	"net"
 	"net/http"
 	"time"
 )
@@ -71,4 +74,17 @@ type statusRecorder struct {
 func (r *statusRecorder) WriteHeader(code int) {
 	r.status = code
 	r.ResponseWriter.WriteHeader(code)
+}
+
+// Hijack forwards to the underlying ResponseWriter so this logging wrapper
+// doesn't break the /ssh websocket upgrade. Embedding http.ResponseWriter (an
+// interface without Hijack) means the wrapper otherwise fails the
+// http.Hijacker assertion that coder/websocket's Accept relies on, and the
+// upgrade dies with 501 Not Implemented.
+func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hj, ok := r.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, errors.New("underlying ResponseWriter is not an http.Hijacker")
+	}
+	return hj.Hijack()
 }
