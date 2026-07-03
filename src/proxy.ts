@@ -41,7 +41,11 @@ import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth/session-token";
  * Paths always allowed through without a session: the sign-in surface and the
  * first-run setup wizard (which must load before anything is configured).
  */
-const PUBLIC_PREFIXES = ["/login", "/setup"];
+// Auth-exempt paths. The icon routes (Next's generated favicon / apple-icon,
+// served extension-less at /icon and /apple-icon, so the matcher's dot rule
+// doesn't skip them) must be public - otherwise the auth gate 307s the browser
+// tab's favicon request to /login and no tab icon ever loads.
+const PUBLIC_PREFIXES = ["/login", "/setup", "/icon", "/apple-icon"];
 
 export async function proxy(request: NextRequest): Promise<NextResponse> {
   // Operator mode: no sessions, nothing to gate.
