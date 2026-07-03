@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Zap, RotateCw, Palette, Eraser, Check } from "lucide-react";
+import { Zap, RotateCw, Eraser, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -91,7 +91,7 @@ export function TerminalConsole({ host, defaultUser }: TerminalConsoleProps) {
         </div>
 
         <div className="flex items-center gap-1.5">
-          <div className="flex items-center gap-1.5 rounded-control border border-line-strong bg-surface pl-2 focus-within:border-ink-faint">
+          <div className="flex h-8 items-center gap-1.5 rounded-control border border-line-strong bg-surface px-2.5 focus-within:border-ink-faint">
             <label
               htmlFor="ssh-user-input"
               className="text-[10px] font-medium uppercase tracking-wide text-ink-faint"
@@ -111,7 +111,7 @@ export function TerminalConsole({ host, defaultUser }: TerminalConsoleProps) {
               autoComplete="off"
               autoCapitalize="off"
               spellCheck={false}
-              className="data w-24 bg-transparent py-1 pr-2 text-xs text-ink outline-none placeholder:text-ink-faint"
+              className="data h-8 w-24 bg-transparent text-xs text-ink outline-none placeholder:text-ink-faint"
               placeholder={DEFAULT_SSH_USER}
             />
           </div>
@@ -127,9 +127,14 @@ export function TerminalConsole({ host, defaultUser }: TerminalConsoleProps) {
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="gap-1.5" aria-label="Terminal theme">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-8 justify-center px-0"
+                aria-label="Terminal theme"
+                title="Terminal theme"
+              >
                 <Swatch themeId={activeTheme.id} />
-                <Palette className="h-3.5 w-3.5" aria-hidden />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-44">
@@ -151,11 +156,12 @@ export function TerminalConsole({ host, defaultUser }: TerminalConsoleProps) {
           </DropdownMenu>
 
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
             onClick={() => setClearSignal((s) => s + 1)}
             aria-label="Clear terminal"
             title="Clear terminal"
+            className="w-8 justify-center px-0"
           >
             <Eraser className="h-3.5 w-3.5" aria-hidden />
           </Button>
