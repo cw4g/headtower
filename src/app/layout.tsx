@@ -13,9 +13,20 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// Next does not prepend the configured basePath to the auto-generated
+// icon.tsx / apple-icon.tsx <link> hrefs, so under a sub-path mount (e.g.
+// /admin) the browser fetches /icon at the origin root - outside the app - and
+// the tab shows no favicon. Point the icon links at the base-path-aware route
+// explicitly (basePath is baked at build time).
+const basePath = process.env.HEADTOWER_BASE_PATH?.trim() || "";
+
 export const metadata: Metadata = {
   title: "Headtower",
   description: "An operator's console for your Headscale tailnet.",
+  icons: {
+    icon: `${basePath}/icon`,
+    apple: `${basePath}/apple-icon`,
+  },
 };
 
 export default function RootLayout({
