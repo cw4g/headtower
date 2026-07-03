@@ -31,15 +31,36 @@ services:
       - HEADTOWER_SESSION_SECRET=${HEADTOWER_SESSION_SECRET:-}
       # Optional: encrypts secrets stored in the DB at rest.
       - HEADTOWER_SECRET=${HEADTOWER_SECRET:-}
-      # Optional agent (device metadata + browser SSH). URL is reachable
-      # in-cluster; the SSH secret must match the agent service's.
+      # Optional agent (device metadata + browser SSH). Reach it in-cluster at
+      # http://agent:8410 (set HEADTOWER_AGENT_URL in .env when you enable the
+      # agent profile below); the SSH secret must match the agent service's.
       - HEADTOWER_AGENT_URL=${HEADTOWER_AGENT_URL:-}
       - HEADTOWER_AGENT_SSH_SECRET=${HEADTOWER_AGENT_SSH_SECRET:-}
+      # Must match the agent's hostname so the app hides the agent's own node.
+      - HEADTOWER_AGENT_HOSTNAME=${HEADTOWER_AGENT_HOSTNAME:-headtower-agent}
+    healthcheck:
+      # Node is in the runner image; the root path 307-redirects when healthy.
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000'+(process.env.HEADTOWER_BASE_PATH||'')).then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   # Optional sidecar: joins the tailnet (tsnet) to report device OS/version/
-  # endpoints the Headscale API lacks, and to proxy browser SSH to nodes. Enable
-  # by setting HEADTOWER_AGENT_AUTHKEY (a Headscale pre-auth key) in .env.
+  # endpoints the Headscale API lacks, and to proxy browser SSH to nodes. It is
+  # OFF by default (a plain `docker compose up -d` runs only the app); enable it
+  # with `docker compose --profile agent up -d` after setting, in .env:
+  #   HEADTOWER_AGENT_AUTHKEY        a Headscale pre-auth key
+  #   HEADTOWER_AGENT_LOGIN_SERVER   your Headscale URL (required)
+  #   HEADTOWER_AGENT_URL=http://agent:8410  (so the app can reach it)
   agent:
+    profiles: ["agent"]
     build: ./agent
     container_name: headtower-agent
     restart: unless-stopped

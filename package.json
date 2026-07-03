@@ -2,6 +2,10 @@
   "name": "headtower-next",
   "version": "0.1.1",
   "private": true,
+  "license": "AGPL-3.0",
+  "engines": {
+    "node": ">=22.5"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",

@@ -7,9 +7,11 @@ import { Callout } from "nextra/components";
 
 # Configuration
 
-Headtower is configured entirely through the environment. It validates that
-environment at startup and fails loudly - naming the offending variable - rather
-than booting half-configured.
+Headtower reads its configuration from the environment, but nothing is strictly
+required to boot: with no Headscale connection set, it opens a **/setup** wizard,
+and identity providers and the agent can be configured from the **Settings**
+panel once you're in. A value you *do* provide is validated - a malformed URL or
+a half-set group (see OIDC below) is named rather than silently ignored.
 
 <Callout type="info">
   These values include secrets and are read server-side only. They are never
@@ -39,21 +41,44 @@ any standards-compliant provider - for example Pocket ID or a generic IdP.
 
 | Variable | Description |
 | --- | --- |
+| `HEADTOWER_SESSION_SECRET` | **Required for sign-in.** Signs session cookies. Min 32 chars - generate with `openssl rand -hex 32`. A sign-in attempt fails without it. |
 | `HEADTOWER_OIDC_ISSUER` | Issuer URL of your OpenID provider. |
 | `HEADTOWER_OIDC_CLIENT_ID` | OAuth client ID registered for Headtower. |
 | `HEADTOWER_OIDC_CLIENT_SECRET` | OAuth client secret for that client. |
 
 <Callout type="warning">
-  OIDC is **all-or-nothing**: set all three variables, or none. A partial set is
-  treated as a misconfiguration and Headtower names the gap instead of silently
-  half-enabling sign-in.
+  OIDC is **all-or-nothing**: set all three `HEADTOWER_OIDC_*` variables, or
+  none. A partial set is treated as a misconfiguration and Headtower names the
+  gap instead of silently half-enabling sign-in. You can also add providers from
+  the Settings panel instead of the environment - either way, set
+  `HEADTOWER_SESSION_SECRET` first.
 </Callout>
 
 ```bash
+HEADTOWER_SESSION_SECRET="<32+ char random string>"
 HEADTOWER_OIDC_ISSUER="https://id.example.com"
 HEADTOWER_OIDC_CLIENT_ID="headtower"
 HEADTOWER_OIDC_CLIENT_SECRET="<client-secret>"
 ```
+
+## Secrets at rest (optional)
+
+| Variable | Description |
+| --- | --- |
+| `HEADTOWER_SECRET` | Encrypts secrets (the Headscale API key, OIDC client secrets) stored in the local SQLite DB. Unset means they are stored in plaintext. Rotating it re-encrypts on the next write. |
+
+## Agent (optional)
+
+The browser SSH terminal and richer device metadata come from an optional agent
+sidecar, off by default (`docker compose --profile agent up -d`).
+
+| Variable | Description |
+| --- | --- |
+| `HEADTOWER_AGENT_AUTHKEY` | A Headscale pre-auth key the agent registers its own node with. |
+| `HEADTOWER_AGENT_LOGIN_SERVER` | Your Headscale URL (required when the agent is enabled). |
+| `HEADTOWER_AGENT_URL` | Where the app reaches the agent, e.g. `http://agent:8410`. |
+| `HEADTOWER_AGENT_SSH_SECRET` | Shared HMAC secret for the SSH bridge; must match on both the app and the agent. |
+| `HEADTOWER_AGENT_HOSTNAME` | The agent's node name (must match on both services; default `headtower-agent`). |
 
 ## Local state (optional)
 

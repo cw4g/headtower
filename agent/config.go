@@ -50,6 +50,12 @@ func loadConfig() (config, error) {
 	if cfg.AuthKey == "" {
 		return config{}, fmt.Errorf("%s is required", envAuthKey)
 	}
+	// The agent is always for a Headscale control plane. An empty login server
+	// would silently target the public Tailscale coordination server and fail
+	// to register a Headscale pre-auth key - refuse it with a clear message.
+	if cfg.ControlURL == "" {
+		return config{}, fmt.Errorf("%s is required (your Headscale URL)", envLoginServer)
+	}
 	return cfg, nil
 }
 

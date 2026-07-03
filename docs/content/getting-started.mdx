@@ -14,7 +14,7 @@ instance, and an API key it can use to talk to it. Everything else is optional.
 
 - A running **Headscale** control plane that Headtower can reach over the network.
 - A **Headscale API key** (Headtower authenticates to the control plane with it).
-- **Node.js 20+** and **pnpm** if you are running from source.
+- **Node.js 22.5+** (24 recommended) and **pnpm** if you are running from source - Headtower uses the built-in `node:sqlite`, which needs 22.5 or newer.
 
 <Callout type="info">
   Generate an API key from your Headscale host with `headscale apikeys create`.
@@ -56,31 +56,36 @@ Open [http://localhost:3000](http://localhost:3000). Headtower opens on the
 
 </Steps>
 
-<Callout type="warning">
-  `HEADSCALE_URL` must be an `http(s)` URL and is normalized without a trailing
-  slash. If either required variable is missing or malformed, Headtower fails
-  loudly and names the offending variable rather than starting half-configured.
+<Callout type="info">
+  You don't have to set these at all. Start Headtower with no connection and it
+  opens a **/setup** wizard to enter and test the Headscale URL and API key in
+  the browser. Setting the env vars just skips that step. A value you *do*
+  provide is validated - a malformed `HEADSCALE_URL` is named rather than
+  silently ignored.
 </Callout>
 
 ## Run with Docker
 
-For a long-running deployment, run Headtower as a container and pass the same
-environment in. A minimal `docker run` looks like:
+For a long-running deployment, use Docker Compose - it wires the app, its
+persistent volume, and the optional agent together:
 
 ```bash
-docker run -d \
-  --name headtower \
-  -p 3000:3000 \
-  -e HEADSCALE_URL="https://headscale.example.com" \
-  -e HEADSCALE_API_KEY="<your-headscale-api-key>" \
-  -v headtower-data:/data \
-  -e HEADTOWER_DB_PATH="/data/headtower.db" \
-  ghcr.io/rnihesh/headtower:latest
+git clone https://github.com/rnihesh/headtower.git
+cd headtower
+cp .env.example .env   # set HEADSCALE_URL + HEADSCALE_API_KEY at minimum
+docker compose up -d
 ```
 
-The bind-mounted volume keeps Headtower's own state (operators, roles, audit
-log) across restarts. See [Configuration](/configuration) for the full set of
-variables, including optional single sign-on.
+Open `http://<your-host>:3000`. The named volume (`/app/data` in the container)
+keeps Headtower's own state - operators, roles, audit log - across restarts.
+See [Configuration](/configuration) for the full set of variables, including
+single sign-on and the agent.
+
+<Callout type="info">
+  The browser SSH terminal and device metadata come from an **optional agent**,
+  off by default. Enable it with `docker compose --profile agent up -d` after
+  setting `HEADTOWER_AGENT_AUTHKEY` and `HEADTOWER_AGENT_LOGIN_SERVER` in `.env`.
+</Callout>
 
 <Callout type="info">
   Headscale remains the source of truth for tailnet data. The Headtower volume

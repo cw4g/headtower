@@ -69,7 +69,9 @@ cp .env.example .env   # set HEADSCALE_URL + HEADSCALE_API_KEY at minimum
 docker compose up -d
 ```
 
-Open `http://<your-host>:3000`. The Headscale connection comes from `.env` (no wizard); everything else - identity providers, the agent, roles, DNS/policy - is configured from **Settings** once you're in, no restart required.
+Open `http://<your-host>:3000`. With the Headscale connection set in `.env` it connects on boot; leave it blank and a **/setup** wizard walks you through it. Everything else - identity providers, roles, DNS/policy - is configured from **Settings** once you're in, no restart required.
+
+The browser SSH terminal and device metadata come from an **optional agent**, off by default. Enable it with `docker compose --profile agent up -d` after setting `HEADTOWER_AGENT_AUTHKEY` and `HEADTOWER_AGENT_LOGIN_SERVER` in `.env`.
 
 ## Development
 
