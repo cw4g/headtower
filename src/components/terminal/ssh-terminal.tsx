@@ -230,10 +230,14 @@ export function SshTerminal({
       )}
       {/* The terminal fills a BOUNDED parent (see TerminalConsole's fixed
           height). Its own background is painted to match the active theme so
-          the padding around the xterm canvas doesn't flash the card surface. */}
+          the padding around the xterm canvas doesn't flash the card surface.
+          Extra bottom padding is deliberate: FitAddon floors rows to whole
+          cells, and with a fractional line-height the last row (e.g. htop's
+          F-key bar) would otherwise sit flush against - and get clipped by -
+          the window's bottom edge. */}
       <div
         ref={containerRef}
-        className={cn("min-h-0 flex-1 overflow-hidden p-2", className)}
+        className={cn("min-h-0 flex-1 overflow-hidden px-3 pt-2.5 pb-4", className)}
         style={{ background: themeBackground }}
       />
       <span className="sr-only" role="status">
