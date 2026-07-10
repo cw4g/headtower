@@ -87,8 +87,20 @@ export default async function RoutesPage() {
       ) : !groups || groups.length === 0 ? (
         <EmptyState
           icon={Network}
-          title="No routes advertised"
-          description="When a machine advertises a subnet route or offers to act as an exit node, it appears here for approval."
+          title="No routes advertised yet"
+          description={
+            <>
+              A node offers a subnet or exit route with{" "}
+              <span className="data text-ink">
+                tailscale up --advertise-routes=&lt;cidr&gt;
+              </span>{" "}
+              or{" "}
+              <span className="data text-ink">
+                tailscale up --advertise-exit-node
+              </span>
+              . It appears here, awaiting approval, once it does.
+            </>
+          }
         />
       ) : (
         <RoutesBoard groups={groups} canManage={canManage} />
