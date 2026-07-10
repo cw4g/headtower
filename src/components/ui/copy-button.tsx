@@ -3,6 +3,29 @@
 import * as React from "react";
 import { Check, Copy } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { toast } from "@/components/ui/toast";
+
+/** Copies via a hidden, briefly-focused textarea + execCommand fallback. */
+function copyWithTextarea(value: string): boolean {
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  textarea.style.pointerEvents = "none";
+  document.body.appendChild(textarea);
+  textarea.select();
+  textarea.setSelectionRange(0, value.length);
+  let ok = false;
+  try {
+    ok = document.execCommand("copy");
+  } catch {
+    ok = false;
+  } finally {
+    document.body.removeChild(textarea);
+  }
+  return ok;
+}
 
 export interface CopyButtonProps {
   /** The text placed on the clipboard. */
@@ -22,14 +45,27 @@ export function CopyButton({ value, label = "Copy", className }: CopyButtonProps
   }, []);
 
   async function copy() {
+    let ok = false;
     try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      if (timer.current) clearTimeout(timer.current);
-      timer.current = setTimeout(() => setCopied(false), 1200);
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(value);
+        ok = true;
+      }
     } catch {
-      // Clipboard unavailable (insecure context); fail quietly.
+      ok = false;
     }
+    // Clipboard API missing or denied (e.g. insecure HTTP origin) - fall
+    // back to the textarea + execCommand trick rather than failing quietly.
+    if (!ok) ok = copyWithTextarea(value);
+
+    if (!ok) {
+      toast.error("Couldn't copy - copy it manually");
+      return;
+    }
+
+    setCopied(true);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setCopied(false), 1200);
   }
 
   return (
