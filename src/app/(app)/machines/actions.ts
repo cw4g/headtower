@@ -10,7 +10,7 @@
  */
 
 import { revalidatePath } from "next/cache";
-import { nodes } from "@/lib/headscale";
+import { nodes, type Node } from "@/lib/headscale";
 import { audit, authorize } from "@/lib/authz";
 import { can } from "@/lib/rbac";
 import { deleteNodeMetadata, deleteNodeMetadataMany } from "@/lib/db";
@@ -162,6 +162,43 @@ export async function deleteNode(id: string): Promise<NodeActionResult> {
     targetId: id,
   });
   // The node is gone: refresh the list and drop the now-dead detail path.
+  revalidateNode(id);
+  return { status: "success" };
+}
+
+/**
+ * Reassign a node to a different owning user. `userId` is the target user's
+ * numeric id (a decimal string). The device keeps its address and keys; only
+ * its owner changes.
+ */
+export async function moveNodeOwner(
+  id: string,
+  userId: string,
+): Promise<NodeActionResult> {
+  const gate = await authorize("machines.write");
+  if (!gate.ok) {
+    return { status: "error", error: gate.reason };
+  }
+
+  const target = userId.trim();
+  if (!target) {
+    return { status: "error", error: "Choose a user to move this machine to." };
+  }
+
+  let moved: Node;
+  try {
+    moved = await nodes.moveUser(id, target);
+  } catch (err) {
+    return { status: "error", error: describeHeadscaleError(err) };
+  }
+
+  await audit(gate.session, {
+    action: "node.moveUser",
+    targetType: "node",
+    targetId: id,
+    targetName: moved.givenName || moved.name,
+    detail: { userId: target },
+  });
   revalidateNode(id);
   return { status: "success" };
 }

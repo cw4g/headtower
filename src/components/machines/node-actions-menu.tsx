@@ -7,6 +7,7 @@ import {
   PencilLine,
   Tags as TagsIcon,
   Trash2,
+  UserCog,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -20,6 +21,7 @@ import {
   NodeActionDialogs,
   type ActionKind,
 } from "@/components/machines/node-action-dialogs";
+import type { UserOption } from "@/components/machines/add-device-dialog";
 
 export interface NodeActionsMenuProps {
   nodeId: string;
@@ -27,6 +29,13 @@ export interface NodeActionsMenuProps {
   tags: string[];
   /** Tailnet-wide tag suggestions for the Edit tags dialog (optional). */
   knownTags?: string[];
+  /**
+   * Current owner id and the tailnet's users, enabling the Move owner action.
+   * Only surfaces that load the user list (the detail header) pass them; where
+   * they're absent the Move owner item isn't shown.
+   */
+  ownerId?: string;
+  users?: UserOption[];
   /**
    * Where to send the operator after a successful delete. Omit on surfaces
    * that stay put and let the list revalidate in place (the table and card
@@ -49,11 +58,14 @@ export function NodeActionsMenu({
   name,
   tags,
   knownTags,
+  ownerId,
+  users,
   redirectAfterDelete,
   className,
 }: NodeActionsMenuProps) {
   const [open, setOpen] = React.useState<ActionKind>(null);
   const close = () => setOpen(null);
+  const canMove = Boolean(users && users.length > 0);
 
   return (
     <>
@@ -89,6 +101,17 @@ export function NodeActionsMenu({
             <TagsIcon className="h-4 w-4" aria-hidden />
             Edit tags
           </DropdownMenuItem>
+          {canMove && (
+            <DropdownMenuItem
+              onSelect={(event) => {
+                event.preventDefault();
+                setOpen("move");
+              }}
+            >
+              <UserCog className="h-4 w-4" aria-hidden />
+              Move owner
+            </DropdownMenuItem>
+          )}
           <DropdownMenuSeparator />
           <DropdownMenuItem
             className="text-warn-500 data-[highlighted]:bg-warn-500/10 data-[highlighted]:text-warn-500"
@@ -118,6 +141,8 @@ export function NodeActionsMenu({
         name={name}
         tags={tags}
         knownTags={knownTags}
+        ownerId={ownerId}
+        users={users}
         open={open}
         onClose={close}
         redirectAfterDelete={redirectAfterDelete}

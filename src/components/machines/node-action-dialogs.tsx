@@ -4,8 +4,9 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { TriangleAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Field, Input } from "@/components/ui/field";
+import { Field, Input, Select } from "@/components/ui/field";
 import { toast } from "@/components/ui/toast";
+import type { UserOption } from "@/components/machines/add-device-dialog";
 import {
   Dialog,
   DialogContent,
@@ -19,12 +20,19 @@ import {
 import {
   deleteNode,
   expireNode,
+  moveNodeOwner,
   renameNode,
   setNodeTags,
 } from "@/app/(app)/machines/actions";
 
 /** Which action dialog, if any, a trigger surface currently has open. */
-export type ActionKind = "rename" | "tags" | "expire" | "delete" | null;
+export type ActionKind =
+  | "rename"
+  | "tags"
+  | "move"
+  | "expire"
+  | "delete"
+  | null;
 
 /**
  * The four Server-Action-backed node mutation dialogs, shared by every trigger
@@ -42,6 +50,8 @@ export function NodeActionDialogs({
   name,
   tags,
   knownTags,
+  ownerId,
+  users,
   open,
   onClose,
   redirectAfterDelete,
@@ -56,6 +66,13 @@ export function NodeActionDialogs({
    * omit it and the dialog just shows no suggestions.
    */
   knownTags?: string[];
+  /**
+   * Current owner's user id and the tailnet's users, powering the Move owner
+   * dialog. Only surfaces that load the user list (the detail page) pass them;
+   * where they're absent the Move owner action isn't offered.
+   */
+  ownerId?: string;
+  users?: UserOption[];
   open: ActionKind;
   onClose: () => void;
   redirectAfterDelete?: string;
@@ -88,6 +105,25 @@ export function NodeActionDialogs({
               name={name}
               tags={tags}
               knownTags={knownTags}
+              onDone={onClose}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={open === "move"}
+        onOpenChange={(v) => {
+          if (!v) onClose();
+        }}
+      >
+        <DialogContent>
+          {open === "move" && users && (
+            <MoveForm
+              nodeId={nodeId}
+              name={name}
+              currentUserId={ownerId ?? ""}
+              users={users}
               onDone={onClose}
             />
           )}
@@ -394,6 +430,85 @@ function RemovableTag({
         <X className="h-3 w-3" aria-hidden />
       </button>
     </span>
+  );
+}
+
+function MoveForm({
+  nodeId,
+  name,
+  currentUserId,
+  users,
+  onDone,
+}: FormProps & { name: string; currentUserId: string; users: UserOption[] }) {
+  const [value, setValue] = React.useState(currentUserId);
+  const [error, setError] = React.useState<string | null>(null);
+  const [pending, startTransition] = React.useTransition();
+
+  // Nothing to submit until the operator picks a different owner.
+  const unchanged = value === currentUserId;
+  const disabled = pending || !value || unchanged;
+
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (disabled) return;
+    startTransition(async () => {
+      const result = await moveNodeOwner(nodeId, value);
+      if (result.status === "success") {
+        const target = users.find((u) => u.id === value);
+        toast(`Moved “${name}” to ${target?.label ?? "new owner"}`);
+        onDone();
+      } else {
+        setError(result.error ?? "Couldn't reassign the machine.");
+      }
+    });
+  }
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>Move owner</DialogTitle>
+        <DialogDescription>
+          Reassign this machine to a different user. It keeps its address and
+          keys; only its owner changes.
+        </DialogDescription>
+      </DialogHeader>
+      <form onSubmit={handleSubmit}>
+        <DialogBody>
+          <Field label="Owner" htmlFor="move-user">
+            <Select
+              id="move-user"
+              value={value}
+              onChange={(e) => {
+                setValue(e.target.value);
+                if (error) setError(null);
+              }}
+              disabled={pending}
+              invalid={Boolean(error)}
+            >
+              {users.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.label}
+                  {user.handle && user.handle !== user.label
+                    ? ` (@${user.handle})`
+                    : ""}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </DialogBody>
+        {error && <DialogError>{error}</DialogError>}
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button type="button" variant="ghost" size="sm" disabled={pending}>
+              Cancel
+            </Button>
+          </DialogClose>
+          <Button type="submit" variant="solid" size="sm" disabled={disabled}>
+            {pending ? "Moving…" : "Move owner"}
+          </Button>
+        </DialogFooter>
+      </form>
+    </>
   );
 }
 

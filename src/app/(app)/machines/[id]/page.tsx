@@ -15,7 +15,11 @@ import {
   Route as RouteIcon,
   Waypoints,
 } from "lucide-react";
-import { nodes as nodesApi, HeadscaleRequestError } from "@/lib/headscale";
+import {
+  nodes as nodesApi,
+  users as usersApi,
+  HeadscaleRequestError,
+} from "@/lib/headscale";
 import type { Node } from "@/lib/headscale";
 import { getAgentPeers } from "@/lib/agent";
 import { sessionCan } from "@/lib/authz";
@@ -52,6 +56,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ConnectionError } from "@/components/machines/connection-error";
 import { NodeActionsMenu } from "@/components/machines/node-actions-menu";
 import { TerminalAction } from "@/components/machines/terminal-action";
+import type { UserOption } from "@/components/machines/add-device-dialog-lazy";
 import {
   NodeMetadataDialog,
   EnvironmentBadge,
@@ -90,7 +95,7 @@ export default async function MachineDetailPage({
   // Enrichment and gating resolve concurrently: role (for the Actions panel
   // and the Terminal action), the optional agent sidecar (device facts), and
   // this node's audit history.
-  const [canManage, canSsh, agent, nodeAudit, metadata, labelSuggestions] =
+  const [canManage, canSsh, agent, nodeAudit, metadata, labelSuggestions, users] =
     await Promise.all([
       sessionCan("machines.write"),
       sessionCan("ssh.connect"),
@@ -104,6 +109,9 @@ export default async function MachineDetailPage({
         ? getNodeMetadata(found.id)
         : Promise.resolve<NodeMetadataValue>(EMPTY_NODE_METADATA),
       found ? loadFleetLabels() : Promise.resolve<string[]>([]),
+      // The user list feeds the Move owner action. Best-effort, like the agent
+      // sidecar: if it fails the action just isn't offered, not the whole page.
+      found ? loadUserOptions() : Promise.resolve<UserOption[]>([]),
     ]);
 
   return (
@@ -127,6 +135,7 @@ export default async function MachineDetailPage({
           audit={nodeAudit}
           metadata={metadata}
           labelSuggestions={labelSuggestions}
+          users={users}
         />
       ) : null}
     </div>
@@ -166,6 +175,24 @@ async function loadFleetLabels(): Promise<string[]> {
   }
 }
 
+/**
+ * The tailnet's users as owner options for the Move owner action, shaped like
+ * the Add device dialog's list. Best-effort: an unreachable control plane just
+ * yields no options, and the action is withheld rather than failing the page.
+ */
+async function loadUserOptions(): Promise<UserOption[]> {
+  try {
+    const allUsers = await usersApi.list();
+    return allUsers.map((user) => ({
+      id: user.id,
+      label: user.displayName?.trim() || user.name,
+      handle: user.name,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 function MachineDetail({
   node,
   canManage,
@@ -174,6 +201,7 @@ function MachineDetail({
   audit,
   metadata,
   labelSuggestions,
+  users,
 }: {
   node: Node;
   canManage: boolean;
@@ -182,6 +210,7 @@ function MachineDetail({
   audit: AuditEntry[];
   metadata: NodeMetadataValue;
   labelSuggestions: string[];
+  users: UserOption[];
 }) {
   const now = nowMs();
   const view = toNodeView(node, now, agent);
@@ -198,6 +227,8 @@ function MachineDetail({
         canManage={canManage}
         canSsh={canSsh}
         sshHost={sshHost}
+        ownerId={node.user?.id ?? ""}
+        users={users}
       />
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -232,6 +263,8 @@ function DetailHeader({
   canManage,
   canSsh,
   sshHost,
+  ownerId,
+  users,
 }: {
   view: NodeView;
   dot: { status: "online" | "warn" | "critical" | "idle"; label: string };
@@ -239,6 +272,8 @@ function DetailHeader({
   canManage: boolean;
   canSsh: boolean;
   sshHost: string | null;
+  ownerId: string;
+  users: UserOption[];
 }) {
   return (
     <div className="flex flex-col gap-4 rounded-card border border-line bg-surface p-5">
@@ -271,6 +306,8 @@ function DetailHeader({
               nodeId={view.id}
               name={view.name}
               tags={view.tags}
+              ownerId={ownerId}
+              users={users}
               redirectAfterDelete="/machines"
             />
           )}

@@ -7,6 +7,7 @@
  *   POST   /api/v1/node/{id}/rename/{name}       rename(id, name)
  *   POST   /api/v1/node/{id}/tags        { tags }    setTags(id, tags)
  *   POST   /api/v1/node/{id}/approve_routes { routes } approveRoutes(id, routes)
+ *   POST   /api/v1/node/{id}/user         { user }    moveUser(id, userId)
  *   POST   /api/v1/node/{id}/expire              expire(id)
  *   DELETE /api/v1/node/{id}                     remove(id)
  *
@@ -92,6 +93,24 @@ export const nodes = {
       `/v1/node/${seg(id)}/approve_routes`,
       { method: "POST", body: { routes } },
     );
+    return res.node;
+  },
+
+  /**
+   * Reassign a node to a different owning user. `userId` is the target user's
+   * numeric id (a decimal string, as returned by `users.list()` and used for
+   * pre-auth keys and registration). Returns the updated node.
+   *
+   * The move endpoint has been present across the supported range (0.26 - 0.29),
+   * so this needs no version gate: a Headscale old enough to lack it answers 404,
+   * which surfaces as an ordinary request error - the same graceful degradation
+   * as `preAuthKeys.remove` on pre-0.29 servers.
+   */
+  async moveUser(id: NodeId, userId: NodeId): Promise<Node> {
+    const res = await request<NodeResponse>(`/v1/node/${seg(id)}/user`, {
+      method: "POST",
+      body: { user: userId },
+    });
     return res.node;
   },
 

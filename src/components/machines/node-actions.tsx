@@ -6,6 +6,7 @@ import {
   PencilLine,
   Tags as TagsIcon,
   Trash2,
+  UserCog,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -13,6 +14,7 @@ import {
   NodeActionDialogs,
   type ActionKind,
 } from "@/components/machines/node-action-dialogs";
+import type { UserOption } from "@/components/machines/add-device-dialog";
 
 interface NodeActionsProps {
   nodeId: string;
@@ -20,6 +22,12 @@ interface NodeActionsProps {
   tags: string[];
   /** Tailnet-wide tag suggestions for the Edit tags dialog (optional). */
   knownTags?: string[];
+  /**
+   * Current owner id and the tailnet's users, enabling the Move owner action.
+   * Omitted where the user list isn't loaded, which hides the Move owner button.
+   */
+  ownerId?: string;
+  users?: UserOption[];
 }
 
 /**
@@ -28,9 +36,17 @@ interface NodeActionsProps {
  * dialogs; on the detail page the current path dies with the node, so a
  * successful delete redirects to "/machines".
  */
-export function NodeActions({ nodeId, name, tags, knownTags }: NodeActionsProps) {
+export function NodeActions({
+  nodeId,
+  name,
+  tags,
+  knownTags,
+  ownerId,
+  users,
+}: NodeActionsProps) {
   const [open, setOpen] = React.useState<ActionKind>(null);
   const close = () => setOpen(null);
+  const canMove = Boolean(users && users.length > 0);
 
   return (
     <>
@@ -41,6 +57,11 @@ export function NodeActions({ nodeId, name, tags, knownTags }: NodeActionsProps)
         <ActionButton icon={TagsIcon} onClick={() => setOpen("tags")}>
           Edit tags
         </ActionButton>
+        {canMove && (
+          <ActionButton icon={UserCog} onClick={() => setOpen("move")}>
+            Move owner
+          </ActionButton>
+        )}
         <div className="my-1 h-px bg-line" />
         <ActionButton
           icon={Ban}
@@ -63,6 +84,8 @@ export function NodeActions({ nodeId, name, tags, knownTags }: NodeActionsProps)
         name={name}
         tags={tags}
         knownTags={knownTags}
+        ownerId={ownerId}
+        users={users}
         open={open}
         onClose={close}
         redirectAfterDelete="/machines"
