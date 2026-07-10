@@ -2,11 +2,14 @@ import * as React from "react";
 import Link from "next/link";
 import { ArrowRight, RadioTower, ServerOff } from "lucide-react";
 import {
+  apiKeys as apiKeysApi,
   nodes as nodesApi,
   preAuthKeys as preAuthKeysApi,
   users as usersApi,
 } from "@/lib/headscale";
 import type { Node, PreAuthKey, User } from "@/lib/headscale";
+import { isCurrentApiKey } from "@/app/(app)/settings/api-keys/current-key";
+import { describeExpiry } from "@/app/(app)/settings/format";
 import { getAgentHealth, getAgentPeers } from "@/lib/agent";
 import { withoutAgentNodes } from "@/lib/agent-node";
 import { getConfig } from "@/lib/config";
@@ -275,14 +278,39 @@ function breakdownHint(agentEnabled: boolean, noun: string): string {
  * Node keys and pre-auth keys expiring within {@link EXPIRING_SOON_WINDOW}, or
  * already lapsed within {@link EXPIRY_PAST_WINDOW} - a tighter, credential-
  * focused sibling of the "Needs attention" list below, which is device-focused
- * and doesn't cover pre-auth keys at all. Expired-first, then soonest-first.
+ * and doesn't cover pre-auth keys at all. Also folds in Headtower's own
+ * control-plane API key (its expiry, from {@link controlPlaneKeyExpiry}) so
+ * that lapsing credential doesn't slip through unnoticed alongside everything
+ * else. Expired-first, then soonest-first.
  */
 function expiringSoon(
   views: NodeView[],
   keys: PreAuthKey[],
   now: number,
+  controlPlaneExpiry: string | null,
 ): ExpiringItem[] {
   const items: (ExpiringItem & { time: number })[] = [];
+
+  if (controlPlaneExpiry) {
+    const t = Date.parse(controlPlaneExpiry);
+    if (!Number.isNaN(t) && t >= now - EXPIRY_PAST_WINDOW && t <= now + EXPIRING_SOON_WINDOW) {
+      // Same classification the api-keys settings page uses for this key's
+      // own "expired" chip, so the two views never disagree on state.
+      const expired = describeExpiry(controlPlaneExpiry, now).state === "expired";
+      items.push({
+        id: "control-plane-key",
+        kind: "Control plane",
+        label: "Headtower's Headscale API key",
+        owner: "Headtower",
+        detail: `${expired ? "expired" : "expires"} ${relativeTime(controlPlaneExpiry, now)}`,
+        expired,
+        // The dedicated settings page, not a machine - this credential has
+        // no node of its own.
+        href: "/settings/api-keys",
+        time: t,
+      });
+    }
+  }
 
   for (const view of views) {
     if (!view.expiry) continue;
@@ -340,6 +368,26 @@ async function recentAuditEntries(limit: number): Promise<AuditEntry[]> {
     return page.entries;
   } catch {
     return [];
+  }
+}
+
+/**
+ * Headtower's own control-plane credential: the Headscale API key this
+ * server authenticates every admin-API call with. Unlike node keys and
+ * pre-auth keys, nothing else in the UI ever surfaces its expiry - if it
+ * lapses, Headtower simply loses its connection to Headscale, with no prior
+ * warning. Best-effort, same contract as {@link recentAuditEntries}: an
+ * unreadable key (unconfigured, control plane briefly unreachable, key
+ * missing from the list) degrades to "nothing to show" rather than failing
+ * the dashboard render.
+ */
+async function controlPlaneKeyExpiry(): Promise<string | null> {
+  try {
+    const keys = await apiKeysApi.list();
+    const current = keys.find((k) => isCurrentApiKey(k.prefix));
+    return current?.expiration ?? null;
+  } catch {
+    return null;
   }
 }
 
@@ -559,18 +607,22 @@ export default async function DashboardPage() {
 
   const osBars = osBreakdown(views);
   const versionBars = versionBreakdown(views);
-  const expiringItems = expiringSoon(views, preAuthKeyList, now);
 
-  // Agent status + recent activity are independent of tailnet size, so they're
-  // read now that the control-plane fetch above has already succeeded. Neither
-  // call can throw: getAgentHealth() and sessionCan() report "unavailable" /
-  // "no" as values, and recentAuditEntries() is its own best-effort wrapper.
+  // Agent status, recent activity, and Headtower's own control-plane key
+  // expiry are all independent of tailnet size, so they're read now that the
+  // control-plane fetch above has already succeeded. None of these can throw:
+  // getAgentHealth() and sessionCan() report "unavailable" / "no" as values,
+  // and recentAuditEntries() / controlPlaneKeyExpiry() are their own
+  // best-effort wrappers.
   const agentConfig = getConfig().agent;
-  const [agentHealth, canWriteSettings, recentActivity] = await Promise.all([
-    getAgentHealth(),
-    sessionCan("settings.write"),
-    recentAuditEntries(RECENT_ACTIVITY_LIMIT),
-  ]);
+  const [agentHealth, canWriteSettings, recentActivity, controlPlaneExpiry] =
+    await Promise.all([
+      getAgentHealth(),
+      sessionCan("settings.write"),
+      recentAuditEntries(RECENT_ACTIVITY_LIMIT),
+      controlPlaneKeyExpiry(),
+    ]);
+  const expiringItems = expiringSoon(views, preAuthKeyList, now, controlPlaneExpiry);
 
   return (
     <div className="flex flex-col gap-6">
