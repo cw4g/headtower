@@ -11,6 +11,10 @@
  */
 
 import type { Node } from "@/lib/headscale";
+import {
+  environmentMeta,
+  type NodeEnvironment,
+} from "@/lib/db/node-metadata-types";
 
 /** The two default routes that mark a node as an exit node. */
 export const DEFAULT_ROUTES = ["0.0.0.0/0", "::/0"] as const;
@@ -321,9 +325,33 @@ export function hasIssue(node: NodeView): boolean {
   );
 }
 
-/** Free-text match across a node's names, owner, addresses and tags. */
-export function matchesQuery(node: NodeView, q: string): boolean {
+/**
+ * The searchable slice of a node's Headtower-local metadata, folded into the
+ * free-text haystack so typing an environment or a label name matches. It is
+ * passed alongside the node (rather than living on `NodeView`) because the
+ * metadata is resolved into a separate `id -> value` map; omit it to search the
+ * node's own facts alone. `NodeMetadataValue` satisfies this shape structurally.
+ */
+export interface NodeSearchMeta {
+  environment: NodeEnvironment | null;
+  labels: string[];
+}
+
+/**
+ * Free-text match across a node's names, owner, addresses, tags, and - when the
+ * node's Headtower-local metadata is supplied - its environment and labels.
+ */
+export function matchesQuery(
+  node: NodeView,
+  q: string,
+  meta?: NodeSearchMeta | null,
+): boolean {
   if (!q) return true;
+  // The environment matches on both its raw value ("prod") and its human label
+  // ("Production"), so an operator typing either reads as a hit.
+  const envLabel = meta?.environment
+    ? (environmentMeta(meta.environment)?.label ?? "")
+    : "";
   const haystack = [
     node.name,
     node.hostname,
@@ -333,6 +361,9 @@ export function matchesQuery(node: NodeView, q: string): boolean {
     node.registerMethod,
     ...node.addresses,
     ...node.tags,
+    meta?.environment ?? "",
+    envLabel,
+    ...(meta?.labels ?? []),
   ]
     .join(" ")
     .toLowerCase();

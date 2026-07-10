@@ -80,7 +80,7 @@ export function MachinesTable({
   metadata?: Record<string, NodeMetadataValue>;
 }) {
   const router = useRouter();
-  const filter = useMachinesFilter(nodes);
+  const filter = useMachinesFilter(nodes, metadata);
   const { filtered, clear } = filter;
 
   // Selection is a set of node ids over the VISIBLE (filtered) rows; it prunes

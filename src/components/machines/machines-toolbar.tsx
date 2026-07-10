@@ -1,12 +1,17 @@
 "use client";
 
 import * as React from "react";
-import { Search, X } from "lucide-react";
-import { Input } from "@/components/ui/field";
+import Link from "next/link";
+import { Download, Search, X } from "lucide-react";
+import { Input, Select } from "@/components/ui/field";
 import { Kbd } from "@/components/ui/kbd";
 import { SegmentedTabs } from "@/components/ui/segmented";
 import { cn } from "@/lib/cn";
 import { MACHINE_STATUS_FILTERS } from "@/lib/machines";
+import {
+  environmentMeta,
+  type NodeEnvironment,
+} from "@/lib/db/node-metadata-types";
 import type { MachinesFilter } from "@/components/machines/use-machines-filter";
 
 /**
@@ -30,11 +35,13 @@ export function MachinesToolbar({
     total,
     onlineCount,
     state,
+    environments,
     active,
     setQuery,
     setStatus,
     setUser,
     setTag,
+    setEnv,
     clear,
   } = filter;
   const searchRef = React.useRef<HTMLInputElement>(null);
@@ -42,6 +49,9 @@ export function MachinesToolbar({
   const statusLabel =
     MACHINE_STATUS_FILTERS.find((f) => f.id === state.status)?.label ??
     state.status;
+  const envLabel = state.env
+    ? (environmentMeta(state.env)?.label ?? state.env)
+    : "";
 
   // Keyboard-first: "/" focuses the filter from anywhere on the view.
   React.useEffect(() => {
@@ -77,7 +87,7 @@ export function MachinesToolbar({
           <span className="data text-online-600">{onlineCount}</span> online
         </p>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
           <SegmentedTabs
             options={statusOptions}
             value={state.status}
@@ -85,6 +95,26 @@ export function MachinesToolbar({
             ariaLabel="Filter by status"
             className="hidden md:flex"
           />
+
+          {/* Environment scope - only offered when the set actually carries
+              annotated environments, so it never shows an empty control. */}
+          {environments.length > 0 && (
+            <Select
+              value={state.env ?? ""}
+              onChange={(e) =>
+                setEnv((e.target.value || null) as NodeEnvironment | null)
+              }
+              aria-label="Filter by environment"
+              className="h-8 w-auto text-xs"
+            >
+              <option value="">All environments</option>
+              {environments.map((env) => (
+                <option key={env} value={env}>
+                  {environmentMeta(env)?.label ?? env}
+                </option>
+              ))}
+            </Select>
+          )}
 
           <div className="relative">
             <Search
@@ -117,6 +147,17 @@ export function MachinesToolbar({
               </Kbd>
             )}
           </div>
+
+          {/* Quiet CSV export of the whole inventory. A plain-ish link (via
+              next/link so the href picks up the configured basePath) rather than
+              an app-router navigation - the Route Handler streams a file. */}
+          <Link
+            href="/machines/export"
+            className="inline-flex h-8 select-none items-center gap-1.5 whitespace-nowrap rounded-control border border-line px-2.5 text-xs font-medium text-ink-muted transition-colors hover:border-line-strong hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beacon-500/40"
+          >
+            <Download className="h-3.5 w-3.5" aria-hidden />
+            Export CSV
+          </Link>
         </div>
       </div>
 
@@ -174,6 +215,13 @@ export function MachinesToolbar({
               label="tag"
               value={state.tag.replace(/^tag:/, "")}
               onDismiss={() => setTag(null)}
+            />
+          )}
+          {state.env && (
+            <FilterPill
+              label="env"
+              value={envLabel}
+              onDismiss={() => setEnv(null)}
             />
           )}
           <button

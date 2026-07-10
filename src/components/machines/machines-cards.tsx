@@ -61,7 +61,7 @@ export function MachinesCards({
    */
   metadata?: Record<string, NodeMetadataValue>;
 }) {
-  const filter = useMachinesFilter(nodes);
+  const filter = useMachinesFilter(nodes, metadata);
   const { filtered, clear } = filter;
 
   // Selection over the VISIBLE (filtered) cards; prunes itself on filter change.
