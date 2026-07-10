@@ -37,11 +37,12 @@ export interface MemberRowProps {
 export function MemberRow({ member, isSelf, canManage, roleOptions }: MemberRowProps) {
   const [error, setError] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  // A role selection that escalates this member to Owner, held here until the
+  // confirm dialog resolves. Any other role change commits straight away.
+  const [pendingOwnerRole, setPendingOwnerRole] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  function onRoleChange(event: React.ChangeEvent<HTMLSelectElement>) {
-    const nextRole = event.target.value;
-    setError(null);
+  function applyRoleChange(nextRole: string) {
     startTransition(async () => {
       const result = await updateMemberRole(member.id, nextRole);
       if (result.status === "error") {
@@ -49,8 +50,27 @@ export function MemberRow({ member, isSelf, canManage, roleOptions }: MemberRowP
       } else {
         const label = roleOptions.find((r) => r.value === nextRole)?.label ?? nextRole;
         toast(`${member.name}'s role changed to ${label}`);
+        setPendingOwnerRole(null);
       }
     });
+  }
+
+  function onRoleChange(event: React.ChangeEvent<HTMLSelectElement>) {
+    const nextRole = event.target.value;
+    if (nextRole === member.role) return;
+    setError(null);
+    // Promoting to Owner grants full access, including managing every other
+    // account's role - a stray click shouldn't be enough to do it. Every other
+    // change (including demotions away from Owner) still commits immediately.
+    if (nextRole === "owner" && member.role !== "owner") {
+      setPendingOwnerRole(nextRole);
+      return;
+    }
+    applyRoleChange(nextRole);
+  }
+
+  function onConfirmPromote() {
+    if (pendingOwnerRole) applyRoleChange(pendingOwnerRole);
   }
 
   function onRemove() {
@@ -93,7 +113,7 @@ export function MemberRow({ member, isSelf, canManage, roleOptions }: MemberRowP
             <Select
               value={member.role}
               onChange={onRoleChange}
-              disabled={pending}
+              disabled={pending || pendingOwnerRole !== null}
               className="h-8 w-36 text-xs"
               aria-label={`Role for ${member.name}`}
             >
@@ -183,6 +203,45 @@ export function MemberRow({ member, isSelf, canManage, roleOptions }: MemberRowP
             </DialogClose>
             <Button variant="danger" size="sm" onClick={onRemove} disabled={pending}>
               {pending ? "Removing…" : "Remove account"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={pendingOwnerRole !== null}
+        onOpenChange={(next) => {
+          if (!next) {
+            setPendingOwnerRole(null);
+            setError(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Promote to owner</DialogTitle>
+            <DialogDescription>
+              <span className="text-ink">{member.name}</span> gets full access to
+              this console, including managing every other account&apos;s role.
+            </DialogDescription>
+          </DialogHeader>
+          {error && (
+            <p
+              role="alert"
+              className="mx-6 flex items-start gap-2 rounded-control border border-critical-500/40 bg-critical-500/10 px-3 py-2 text-xs text-critical-500"
+            >
+              <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+              {error}
+            </p>
+          )}
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="ghost" size="sm">
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button variant="solid" size="sm" onClick={onConfirmPromote} disabled={pending}>
+              {pending ? "Promoting…" : "Promote to owner"}
             </Button>
           </DialogFooter>
         </DialogContent>
