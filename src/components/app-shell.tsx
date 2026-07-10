@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { BeaconMark } from "@/components/beacon-mark";
 import { ConsoleSidebar } from "@/components/console-sidebar";
 import { MobileNavDrawer } from "@/components/mobile-nav-drawer";
+import { Kbd } from "@/components/ui/kbd";
 import { ToastViewport } from "@/components/ui/toast";
 import type { Account } from "@/components/account-menu";
 import { getSession } from "@/lib/auth";
@@ -94,6 +95,14 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
           </span>
         </div>
         <div className="relative mx-auto w-full max-w-[1400px] px-4 py-6">
+          {/* Quiet Cmd-K nudge: the palette is otherwise easy to miss, so a
+              small chip advertises it at the top of every view. Hidden below
+              `md` alongside the desktop sidebar it complements - touch has no
+              keyboard shortcut to teach, and the mobile header owns that row. */}
+          <div className="mb-4 hidden items-center justify-end gap-1.5 text-[11px] text-ink-faint md:flex">
+            <span>Jump anywhere</span>
+            <Kbd>⌘K</Kbd>
+          </div>
           {children}
         </div>
       </main>
