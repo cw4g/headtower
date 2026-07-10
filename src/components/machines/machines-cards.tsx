@@ -12,6 +12,7 @@ import {
 } from "@/components/machines/node-metadata-dialog";
 import type { NodeMetadataValue } from "@/lib/db/node-metadata-types";
 import { NodeActionsMenu } from "@/components/machines/node-actions-menu";
+import { RowQuickActions } from "@/components/machines/row-quick-actions";
 import { MachinesToolbar } from "@/components/machines/machines-toolbar";
 import { BulkActionBar } from "@/components/machines/bulk-action-bar";
 import { useMachinesFilter } from "@/components/machines/use-machines-filter";
@@ -393,13 +394,23 @@ function HostCard({
       )}
 
       {canManage && (
-        <NodeActionsMenu
-          nodeId={node.id}
-          name={node.name}
-          tags={node.tags}
-          knownTags={knownTags}
-          className="absolute right-2.5 top-2.5 bg-surface/80 opacity-0 backdrop-blur-sm transition-opacity duration-150 hover:bg-surface-2 group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100"
-        />
+        // Top-right control cluster: a hover/focus-revealed quick-action pair
+        // (open terminal, copy IP) sits just left of the kebab. Each carries its
+        // own translucent backdrop so it stays legible over the card's OS/version
+        // readout, mirroring the kebab's resting calm.
+        <div className="absolute right-2.5 top-2.5 flex items-center gap-0.5">
+          <RowQuickActions
+            node={node}
+            className="rounded-control bg-surface/80 backdrop-blur-sm"
+          />
+          <NodeActionsMenu
+            nodeId={node.id}
+            name={node.name}
+            tags={node.tags}
+            knownTags={knownTags}
+            className="bg-surface/80 opacity-0 backdrop-blur-sm transition-opacity duration-150 hover:bg-surface-2 group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100"
+          />
+        </div>
       )}
     </div>
   );

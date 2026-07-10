@@ -20,6 +20,7 @@ import {
 } from "@/components/machines/node-metadata-dialog";
 import type { NodeMetadataValue } from "@/lib/db/node-metadata-types";
 import { NodeActionsMenu } from "@/components/machines/node-actions-menu";
+import { RowQuickActions } from "@/components/machines/row-quick-actions";
 import { MachinesToolbar } from "@/components/machines/machines-toolbar";
 import { BulkActionBar } from "@/components/machines/bulk-action-bar";
 import { useMachinesFilter } from "@/components/machines/use-machines-filter";
@@ -451,17 +452,22 @@ function MachineRow({
       </Td>
 
       {/* Actions - own click handler so it doesn't also trigger the row's
-          onOpen. Hover/focus-revealed to keep the resting row calm; stays
-          visible while the menu itself is open via Radix's data-state. */}
+          onOpen. A hover/focus-revealed quick-action cluster (open terminal,
+          copy IP) sits just left of the kebab; both stay calm at rest. The
+          kebab additionally stays visible while its menu is open via Radix's
+          data-state. */}
       {canManage && (
         <Td className="pr-4" align="right" onClick={(e) => e.stopPropagation()}>
-          <NodeActionsMenu
-            nodeId={node.id}
-            name={node.name}
-            tags={node.tags}
-            knownTags={knownTags}
-            className="ml-auto opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100"
-          />
+          <div className="flex items-center justify-end gap-0.5">
+            <RowQuickActions node={node} />
+            <NodeActionsMenu
+              nodeId={node.id}
+              name={node.name}
+              tags={node.tags}
+              knownTags={knownTags}
+              className="opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100"
+            />
+          </div>
         </Td>
       )}
     </Tr>
