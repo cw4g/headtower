@@ -61,10 +61,11 @@ export async function authorize(capability: Capability): Promise<AuthzResult> {
 }
 
 /**
- * Record an audit entry for a completed mutation, stamping the actor from the
- * session. Best-effort by design: a failed audit write is logged but never
- * propagates, so a flaky local store can't undo or mask a change the control
- * plane already accepted (e.g. swallowing a freshly minted key's only reveal).
+ * Record an audit entry for a completed mutation, stamping the stable actor id
+ * from the session. Best-effort by design: a failed audit write is logged but
+ * never propagates, so a flaky local store can't undo or mask a change the
+ * control plane already accepted (e.g. swallowing a freshly minted key's only
+ * reveal).
  */
 export async function audit(
   session: Session,
@@ -77,9 +78,19 @@ export async function audit(
   }
 }
 
-/** The stable label written to the audit trail for a principal. */
+/**
+ * The stable actor id written to the audit (and SSH-session) trail for a
+ * principal: the `app_user` id under OIDC, or "operator" in single-operator
+ * mode. Deliberately an *id*, not a display name - names change (an IdP rename,
+ * an edited profile), and storing the name fragments one person's history into
+ * several actors in the audit filter. This is the same identifier the login and
+ * logout paths record, so a person is one actor across sign-in, sign-out, and
+ * every mutation; the audit view resolves it back to a current name at render
+ * time (see `resolveActorNames` in `@/app/(app)/audit/page`). The name is kept
+ * for its existing call sites - the value it returns is now the identity.
+ */
 export function actorLabel(session: Session): string {
-  return session.user.name;
+  return session.user.id;
 }
 
 /**

@@ -23,6 +23,9 @@ export async function logout(): Promise<void> {
   }
 
   await endSession();
+  // Same stable account id (`app_user.id`) the mutations and the login callback
+  // record, so the audit actor filter groups this person's whole history - login,
+  // logout, and every action - under one identity, resolved to a name at render.
   await recordAudit({
     actor: session.user.id,
     action: "auth.logout",

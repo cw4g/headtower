@@ -9,7 +9,11 @@ import { humanizeAction } from "./format";
 export interface AuditFacets {
   actions: string[];
   targetTypes: string[];
-  actors: string[];
+  /** Actor options are pre-resolved on the server (the stable actor id as
+   *  `value`, the person's current display name as `label`), since naming them
+   *  needs an `app_user` join the client can't do. Filtering still matches on
+   *  the id, so a person shows once with their whole history. */
+  actors: { value: string; label: string }[];
 }
 
 export interface AuditFiltersProps {
@@ -72,7 +76,7 @@ export function AuditFilters({ facets, active }: AuditFiltersProps) {
         label="Actor"
         value={active.actor ?? ""}
         placeholder="All actors"
-        options={facets.actors.map((value) => ({ value, label: value }))}
+        options={facets.actors}
         onChange={(value) => update("actor", value)}
       />
       {hasActive && (

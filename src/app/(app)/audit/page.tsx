@@ -8,7 +8,8 @@ import {
   ScrollText,
   SquareTerminal,
 } from "lucide-react";
-import { auditLog, db, type AuditEntry } from "@/lib/db";
+import { inArray } from "drizzle-orm";
+import { appUser, auditLog, db, type AuditEntry } from "@/lib/db";
 import { listAudit } from "@/lib/audit";
 import { sessionCan } from "@/lib/authz";
 import { listSshSessions, type SshSession } from "@/lib/ssh-sessions";
@@ -45,7 +46,18 @@ interface ActiveFilters {
 interface AuditView {
   entries: AuditEntry[];
   total: number;
-  facets: AuditFacets;
+  facets: RawFacets;
+}
+
+/**
+ * Distinct facet values straight from the log, before actor ids are resolved to
+ * names. `actorIds` are stable ids ("operator" or an `app_user.id`); the page
+ * joins them to current display names once, for both the filter rail and the rows.
+ */
+interface RawFacets {
+  actions: string[];
+  targetTypes: string[];
+  actorIds: string[];
 }
 
 type SearchParams = Record<string, string | string[] | undefined>;
@@ -89,7 +101,34 @@ export default async function AuditPage({
 
   const entries = view?.entries ?? [];
   const total = view?.total ?? 0;
-  const facets: AuditFacets = view?.facets ?? { actions: [], targetTypes: [], actors: [] };
+  const rawFacets: RawFacets = view?.facets ?? {
+    actions: [],
+    targetTypes: [],
+    actorIds: [],
+  };
+
+  // Resolve every stable actor id we're about to show - the filter rail, the
+  // trail rows, and the SSH card - to a current display name in one join. This
+  // is what collapses a person to a single actor (their id) with their whole
+  // history, and keeps the name fresh after an IdP rename. Best-effort: on a
+  // read failure the ids simply render verbatim (see resolveActorNames).
+  const actorNames = await resolveActorNames([
+    ...rawFacets.actorIds,
+    ...entries.map((entry) => entry.actor),
+    ...sshSessions.map((entry) => entry.actor),
+  ]);
+
+  const facets: AuditFacets = {
+    actions: rawFacets.actions,
+    targetTypes: rawFacets.targetTypes,
+    // Pre-resolve actor ids to labels here (the client filter can't join
+    // `app_user`), keeping the stable id as the option value so filtering still
+    // matches on it. Sort by the visible name.
+    actors: rawFacets.actorIds
+      .map((value) => ({ value, label: actorName(value, actorNames) }))
+      .sort((a, b) => a.label.localeCompare(b.label)),
+  };
+
   const hasFilters = Boolean(filters.action || filters.targetType || filters.actor);
   const hasAnyRows = total > 0 || hasFilters || facets.actions.length > 0;
 
@@ -150,7 +189,7 @@ export default async function AuditPage({
                   </TableHead>
                   <TableBody>
                     {entries.map((entry) => (
-                      <AuditRow key={entry.id} entry={entry} />
+                      <AuditRow key={entry.id} entry={entry} actorNames={actorNames} />
                     ))}
                   </TableBody>
                 </Table>
@@ -170,7 +209,11 @@ export default async function AuditPage({
       )}
 
       {canViewSshSessions && (
-        <SshSessionsCard sessions={sshSessions} failed={sshSessionsFailed} />
+        <SshSessionsCard
+          sessions={sshSessions}
+          failed={sshSessionsFailed}
+          actorNames={actorNames}
+        />
       )}
     </div>
   );
@@ -191,8 +234,12 @@ async function loadAudit(filters: ActiveFilters, offset: number): Promise<AuditV
   return { entries: pageResult.entries, total: pageResult.total, facets };
 }
 
-/** Distinct, sorted values for each filterable column, for the Select options. */
-async function loadFacets(): Promise<AuditFacets> {
+/**
+ * Distinct values for each filterable column. Actions and target types come out
+ * pre-sorted; actor ids are returned raw (a mix of `app_user.id`, "operator",
+ * and legacy name-based values) and sorted by resolved name once named upstream.
+ */
+async function loadFacets(): Promise<RawFacets> {
   const [actions, targetTypes, actors] = await Promise.all([
     db
       .select({ value: auditLog.action })
@@ -214,11 +261,53 @@ async function loadFacets(): Promise<AuditFacets> {
   return {
     actions: nonEmpty(actions.map((row) => row.value)),
     targetTypes: nonEmpty(targetTypes.map((row) => row.value)),
-    actors: nonEmpty(actors.map((row) => row.value)),
+    actorIds: nonEmpty(actors.map((row) => row.value)),
   };
 }
 
-function AuditRow({ entry }: { entry: AuditEntry }) {
+/**
+ * Resolve stable actor ids to current display names for render. The trail stores
+ * a stable actor id per row (an `app_user.id`, or "operator" in single-operator
+ * mode); we join those against `app_user` here so each person shows under one
+ * identity with their up-to-date name - even after an IdP-driven rename.
+ *
+ * Best-effort and backward-tolerant: a read failure yields an empty map (ids
+ * render verbatim), and legacy rows that stored a raw name - or any id with no
+ * matching account - simply fall back to the stored value (see {@link actorName}).
+ */
+async function resolveActorNames(actorIds: string[]): Promise<Map<string, string>> {
+  const ids = Array.from(new Set(actorIds.filter((id) => id && id.trim())));
+  const names = new Map<string, string>();
+  if (ids.length === 0) return names;
+  try {
+    const rows = await db
+      .select({ id: appUser.id, name: appUser.name })
+      .from(appUser)
+      .where(inArray(appUser.id, ids));
+    for (const row of rows) names.set(row.id, row.name);
+  } catch {
+    // Leave the map empty; callers fall back to the raw actor id.
+  }
+  return names;
+}
+
+/**
+ * The display name for a stored actor id: the resolved account name, the friendly
+ * "Operator" for single-operator mode, or the raw value verbatim for a legacy
+ * name-based row or an id whose account no longer exists.
+ */
+function actorName(actor: string, names: Map<string, string>): string {
+  if (actor === "operator") return "Operator";
+  return names.get(actor) ?? actor;
+}
+
+function AuditRow({
+  entry,
+  actorNames,
+}: {
+  entry: AuditEntry;
+  actorNames: Map<string, string>;
+}) {
   const tsDate = entry.ts instanceof Date ? entry.ts : new Date(entry.ts);
   const detail = summarizeDetail(entry.detail);
 
@@ -228,7 +317,10 @@ function AuditRow({ entry }: { entry: AuditEntry }) {
         {relativeTime(tsDate)}
       </Td>
       <Td>
-        <span className="data text-ink-muted">{entry.actor}</span>
+        {/* title carries the stable actor id behind the resolved name. */}
+        <span className="data text-ink-muted" title={entry.actor}>
+          {actorName(entry.actor, actorNames)}
+        </span>
       </Td>
       <Td>
         <span className="flex flex-col leading-tight">
@@ -291,9 +383,11 @@ function TargetCell({ entry }: { entry: AuditEntry }) {
 function SshSessionsCard({
   sessions,
   failed,
+  actorNames,
 }: {
   sessions: SshSession[];
   failed: boolean;
+  actorNames: Map<string, string>;
 }) {
   return (
     <Card>
@@ -335,7 +429,7 @@ function SshSessionsCard({
           </TableHead>
           <TableBody>
             {sessions.map((entry) => (
-              <SshSessionRow key={entry.id} entry={entry} />
+              <SshSessionRow key={entry.id} entry={entry} actorNames={actorNames} />
             ))}
           </TableBody>
         </Table>
@@ -344,7 +438,13 @@ function SshSessionsCard({
   );
 }
 
-function SshSessionRow({ entry }: { entry: SshSession }) {
+function SshSessionRow({
+  entry,
+  actorNames,
+}: {
+  entry: SshSession;
+  actorNames: Map<string, string>;
+}) {
   const startedAt = entry.startedAt instanceof Date ? entry.startedAt : new Date(entry.startedAt);
 
   return (
@@ -353,7 +453,10 @@ function SshSessionRow({ entry }: { entry: SshSession }) {
         {relativeTime(startedAt)}
       </Td>
       <Td>
-        <span className="data text-ink-muted">{entry.actor}</span>
+        {/* Resolved like the audit rows; title carries the stable actor id. */}
+        <span className="data text-ink-muted" title={entry.actor}>
+          {actorName(entry.actor, actorNames)}
+        </span>
       </Td>
       <Td>
         <span className="inline-flex items-baseline gap-1">

@@ -68,6 +68,10 @@ export async function GET(request: NextRequest): Promise<Response> {
   const user = await upsertOidcUser(identity);
   const { token, expiresAt } = await createSession(user.id);
 
+  // Stamp the stable account id (`app_user.id`) - the SAME identifier every
+  // mutation records via `actorLabel(session)` and the logout path records - so
+  // one person is one actor across sign-in, sign-out, and their actions. The
+  // audit view resolves this id to a current display name at render time.
   await recordAudit({
     actor: user.id,
     action: "auth.login",
