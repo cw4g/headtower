@@ -8,8 +8,13 @@ import { Chip, Tag } from "@/components/ui/chip";
 import { CopyButton } from "@/components/ui/copy-button";
 import { Select } from "@/components/ui/field";
 import {
+  CardRow,
+  CardRowMeta,
+  CardRowField,
+  CardRows,
   Table,
   TableBody,
+  TableDesktop,
   TableHead,
   Td,
   Th,
@@ -113,48 +118,63 @@ export function PreAuthKeysTable({
       </div>
 
       <Card>
-        <Table>
-          <TableHead>
-            <Tr className="hover:bg-transparent">
-              <Th className="pl-4">Key</Th>
-              <Th>Owner</Th>
-              <Th>Properties</Th>
-              <Th>State</Th>
-              <Th align="right">Expires</Th>
-              <Th className="pr-4 text-right">
-                <span className="sr-only">Actions</span>
-              </Th>
-            </Tr>
-          </TableHead>
-          <TableBody>
-            {filtered.length === 0 ? (
-              <Tr className="hover:bg-transparent">
-                <Td colSpan={6} className="py-10 text-center">
-                  <p className="text-sm text-ink-muted">No keys match the filters.</p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOwnerId("");
-                      setHideInactive(false);
-                    }}
-                    className="mt-1 text-xs text-beacon-500 hover:underline"
-                  >
-                    Reset filters
-                  </button>
-                </Td>
-              </Tr>
-            ) : (
-              filtered.map((key) => (
-                <PreAuthKeyRow
+        {filtered.length === 0 ? (
+          <div className="py-10 text-center">
+            <p className="text-sm text-ink-muted">No keys match the filters.</p>
+            <button
+              type="button"
+              onClick={() => {
+                setOwnerId("");
+                setHideInactive(false);
+              }}
+              className="mt-1 text-xs text-beacon-500 hover:underline"
+            >
+              Reset filters
+            </button>
+          </div>
+        ) : (
+          <>
+            <TableDesktop>
+              <Table>
+                <TableHead>
+                  <Tr className="hover:bg-transparent">
+                    <Th className="pl-4">Key</Th>
+                    <Th>Owner</Th>
+                    <Th>Properties</Th>
+                    <Th>State</Th>
+                    <Th align="right">Expires</Th>
+                    <Th className="pr-4 text-right">
+                      <span className="sr-only">Actions</span>
+                    </Th>
+                  </Tr>
+                </TableHead>
+                <TableBody>
+                  {filtered.map((key) => (
+                    <PreAuthKeyRow
+                      key={key.id}
+                      entry={key}
+                      now={now}
+                      canManage={canManage}
+                    />
+                  ))}
+                </TableBody>
+              </Table>
+            </TableDesktop>
+
+            {/* Below `md`, the columns above give way to one key+actions card
+                per row instead of a table that scrolls the kebab off-screen. */}
+            <CardRows>
+              {filtered.map((key) => (
+                <PreAuthKeyCard
                   key={key.id}
                   entry={key}
                   now={now}
                   canManage={canManage}
                 />
-              ))
-            )}
-          </TableBody>
-        </Table>
+              ))}
+            </CardRows>
+          </>
+        )}
       </Card>
     </div>
   );
@@ -189,15 +209,7 @@ function PreAuthKeyRow({
       <Td className="text-ink-muted">{ownerName}</Td>
 
       <Td>
-        <div className="flex flex-wrap items-center gap-1">
-          {entry.reusable ? (
-            <Tag>reusable</Tag>
-          ) : (
-            <Tag>single-use</Tag>
-          )}
-          {entry.ephemeral && <Tag>ephemeral</Tag>}
-          {entry.aclTags?.map((tag) => <Tag key={tag}>{tag}</Tag>)}
-        </div>
+        <PreAuthKeyProperties entry={entry} />
       </Td>
 
       <Td>
@@ -228,6 +240,82 @@ function PreAuthKeyRow({
         </div>
       </Td>
     </Tr>
+  );
+}
+
+/** The reusable/single-use, ephemeral, and ACL-tag badges. Shared by the
+ * desktop `Td` and the small-screen `CardRowField` so they never drift. */
+function PreAuthKeyProperties({ entry }: { entry: PreAuthKey }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {entry.reusable ? <Tag>reusable</Tag> : <Tag>single-use</Tag>}
+      {entry.ephemeral && <Tag>ephemeral</Tag>}
+      {entry.aclTags?.map((tag) => <Tag key={tag}>{tag}</Tag>)}
+    </div>
+  );
+}
+
+/**
+ * Small-screen counterpart to `PreAuthKeyRow`: the same key, owner,
+ * properties, state, and expiry readouts, stacked into one card with the
+ * kebab pinned on the right so it never scrolls away.
+ */
+function PreAuthKeyCard({
+  entry,
+  now,
+  canManage,
+}: {
+  entry: PreAuthKey;
+  now: number;
+  canManage: boolean;
+}) {
+  const expiry = describeExpiry(entry.expiration, now);
+  const expired = expiry.state === "expired";
+  const created = formatDate(entry.createdAt);
+  const ownerName = entry.user?.displayName?.trim() || entry.user?.name || "·";
+  const preview = entry.key ? `${entry.key.slice(0, 14)}…` : `#${entry.id}`;
+
+  return (
+    <CardRow>
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
+        <div className="flex items-center gap-1.5">
+          <code className="data text-xs text-ink" title={`#${entry.id}`}>
+            {preview}
+          </code>
+          {entry.key && <CopyButton value={entry.key} label="Copy key" />}
+        </div>
+        <CardRowMeta>
+          <CardRowField label="Owner">{ownerName}</CardRowField>
+          <CardRowField label="State">
+            <StateChip state={expiry.state} used={entry.used} reusable={entry.reusable} />
+          </CardRowField>
+          <CardRowField label="Expires" className="col-span-2">
+            <span title={expiry.title ?? undefined}>{expiry.label}</span>
+            {created && (
+              <span className="ml-1.5 text-ink-faint" title={created.title}>
+                made {created.label}
+              </span>
+            )}
+          </CardRowField>
+          <CardRowField label="Properties" className="col-span-2">
+            <PreAuthKeyProperties entry={entry} />
+          </CardRowField>
+        </CardRowMeta>
+      </div>
+
+      <div className="shrink-0">
+        {canManage ? (
+          <PreAuthKeyActions
+            id={entry.id}
+            user={entry.user?.id ?? ""}
+            keyValue={entry.key ?? ""}
+            expired={expired}
+          />
+        ) : (
+          <span className="pr-1 text-xs text-ink-faint">—</span>
+        )}
+      </div>
+    </CardRow>
   );
 }
 

@@ -10,8 +10,13 @@ import { Chip } from "@/components/ui/chip";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SectionHeading } from "@/components/ui/section-heading";
 import {
+  CardRow,
+  CardRowMeta,
+  CardRowField,
+  CardRows,
   Table,
   TableBody,
+  TableDesktop,
   TableHead,
   Td,
   Th,
@@ -150,36 +155,54 @@ export default async function UsersPage() {
         />
       ) : (
         <Card>
-          <Table>
-            <TableHead>
-              <Tr className="hover:bg-transparent">
-                <Th>User</Th>
-                <Th>ID</Th>
-                <Th align="right">Nodes</Th>
-                <Th>Source</Th>
-                <Th className={canManage ? undefined : "pr-4"} align="right">
-                  Created
-                </Th>
-                {canManage && (
-                  <Th className="pr-4" align="right">
-                    <span className="sr-only">Actions</span>
+          <TableDesktop>
+            <Table>
+              <TableHead>
+                <Tr className="hover:bg-transparent">
+                  <Th>User</Th>
+                  <Th>ID</Th>
+                  <Th align="right">Nodes</Th>
+                  <Th>Source</Th>
+                  <Th className={canManage ? undefined : "pr-4"} align="right">
+                    Created
                   </Th>
-                )}
-              </Tr>
-            </TableHead>
-            <TableBody>
-              {list.map((user) => (
-                <UserRow
-                  key={user.id}
-                  user={user}
-                  account={accounts.get(user.id) ?? null}
-                  nodeCount={nodeCounts?.get(user.id) ?? null}
-                  countsAvailable={nodeCounts !== null}
-                  canManage={canManage}
-                />
-              ))}
-            </TableBody>
-          </Table>
+                  {canManage && (
+                    <Th className="pr-4" align="right">
+                      <span className="sr-only">Actions</span>
+                    </Th>
+                  )}
+                </Tr>
+              </TableHead>
+              <TableBody>
+                {list.map((user) => (
+                  <UserRow
+                    key={user.id}
+                    user={user}
+                    account={accounts.get(user.id) ?? null}
+                    nodeCount={nodeCounts?.get(user.id) ?? null}
+                    countsAvailable={nodeCounts !== null}
+                    canManage={canManage}
+                  />
+                ))}
+              </TableBody>
+            </Table>
+          </TableDesktop>
+
+          {/* Below `md`, the columns above give way to one identity+actions
+              card per user instead of a table that scrolls the kebab
+              off-screen. */}
+          <CardRows>
+            {list.map((user) => (
+              <UserCard
+                key={user.id}
+                user={user}
+                account={accounts.get(user.id) ?? null}
+                nodeCount={nodeCounts?.get(user.id) ?? null}
+                countsAvailable={nodeCounts !== null}
+                canManage={canManage}
+              />
+            ))}
+          </CardRows>
         </Card>
       )}
     </div>
@@ -248,21 +271,7 @@ function UserRow({
         )}
       </Td>
       <Td>
-        {account ? (
-          // Matched against a Headtower app_user: this person signed in via
-          // OIDC, which is a more specific (and more trustworthy) source than
-          // whatever Headscale itself might report below.
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Chip variant="beacon">SSO</Chip>
-            <Chip variant="default">{ROLE_LABELS[account.role]}</Chip>
-          </div>
-        ) : provider ? (
-          <Chip mono variant="default">
-            {provider}
-          </Chip>
-        ) : (
-          <span className="text-xs text-ink-faint">local</span>
-        )}
+        <UserSource account={account} provider={provider} />
       </Td>
       <Td
         data
@@ -293,6 +302,130 @@ function UserRow({
         </Td>
       )}
     </Tr>
+  );
+}
+
+/**
+ * Where this user's identity comes from: an SSO chip pair when a Headtower
+ * account matched by OIDC, the raw Headscale provider string, or plain
+ * "local". Shared by the desktop `Td` and the small-screen `CardRowField` so
+ * the two presentations never drift.
+ */
+function UserSource({
+  account,
+  provider,
+}: {
+  account: AppUser | null;
+  provider: string | undefined;
+}) {
+  if (account) {
+    // Matched against a Headtower app_user: this person signed in via OIDC,
+    // which is a more specific (and more trustworthy) source than whatever
+    // Headscale itself might report below.
+    return (
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Chip variant="beacon">SSO</Chip>
+        <Chip variant="default">{ROLE_LABELS[account.role]}</Chip>
+      </div>
+    );
+  }
+  if (provider) {
+    return (
+      <Chip mono variant="default">
+        {provider}
+      </Chip>
+    );
+  }
+  return <span className="text-xs text-ink-faint">local</span>;
+}
+
+/**
+ * Small-screen counterpart to `UserRow`: the same identity, node count,
+ * source, and created readouts, stacked into one card with the kebab pinned
+ * on the right so it never scrolls away.
+ */
+function UserCard({
+  user,
+  account,
+  nodeCount,
+  countsAvailable,
+  canManage,
+}: {
+  user: User;
+  account: AppUser | null;
+  nodeCount: number | null;
+  countsAvailable: boolean;
+  canManage: boolean;
+}) {
+  const displayName = user.displayName?.trim() || user.name;
+  const showHandle = Boolean(user.displayName?.trim()) && user.displayName.trim() !== user.name;
+  const created = formatDate(user.createdAt);
+  const provider = user.provider?.trim();
+
+  return (
+    <CardRow>
+      <div className="flex min-w-0 flex-1 items-start gap-3">
+        <Avatar user={user} account={account} />
+        <div className="flex min-w-0 flex-col gap-2">
+          <div className="flex min-w-0 flex-col leading-tight">
+            <Link
+              href={`/users/${user.id}`}
+              className="truncate font-medium text-ink transition-colors hover:text-beacon-500"
+            >
+              {displayName}
+            </Link>
+            {showHandle && (
+              <span className="data truncate text-xs text-ink-faint">@{user.name}</span>
+            )}
+          </div>
+          <CardRowMeta>
+            <CardRowField label="Nodes">
+              {!countsAvailable ? (
+                <span className="text-ink-faint" title="Node count unavailable">
+                  ·
+                </span>
+              ) : (
+                <Link
+                  href={`/machines?user=${encodeURIComponent(user.name)}`}
+                  className="transition-colors hover:text-beacon-500"
+                >
+                  {nodeCount && nodeCount > 0 ? (
+                    nodeCount
+                  ) : (
+                    <span className="text-ink-faint">0</span>
+                  )}
+                </Link>
+              )}
+            </CardRowField>
+            <CardRowField label="Source">
+              <UserSource account={account} provider={provider} />
+            </CardRowField>
+            <CardRowField label="Created">
+              {created ? (
+                <span title={created.title}>{created.label}</span>
+              ) : (
+                <span className="text-ink-faint">·</span>
+              )}
+            </CardRowField>
+            <CardRowField label="ID">
+              <span className="data block truncate" title={user.id}>
+                {user.id}
+              </span>
+            </CardRowField>
+          </CardRowMeta>
+        </div>
+      </div>
+
+      {canManage && (
+        <UserActions
+          userId={user.id}
+          name={user.name}
+          ownedNodeCount={nodeCount ?? 0}
+          redirectAfterDelete="/users"
+          className="shrink-0"
+        />
+      )}
+    </CardRow>
   );
 }
 
