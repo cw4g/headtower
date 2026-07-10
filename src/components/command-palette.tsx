@@ -6,9 +6,12 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import {
   Activity,
   ArrowUpRight,
+  CheckCheck,
   ChevronRight,
   Copy,
   CornerDownLeft,
+  Download,
+  Fingerprint,
   KeyRound,
   KeySquare,
   LayoutDashboard,
@@ -20,6 +23,7 @@ import {
   Shield,
   ShieldCheck,
   SquareTerminal,
+  UserPlus,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -71,15 +75,25 @@ interface CommandItem {
   deviceId?: string;
   /** The device's tailnet IPv4, when known - gates the "Copy IP" sub-action. */
   ipv4?: string | null;
+  /**
+   * True when `href` is a downloadable Route Handler (a CSV export) rather
+   * than a page - `select()` does a full navigation instead of `router.push`
+   * so the browser's own Content-Disposition download handling kicks in
+   * instead of the client router trying to treat the response as an RSC page.
+   */
+  download?: boolean;
 }
 
 /**
  * Static quick actions, always at the top of the results. Each jumps to where
  * the action actually lives (Headtower has no globally-mounted dialogs), so
  * "doing" it is one more click after landing - still faster than hunting
- * through nav for it. The `?add=1` / `?create=1` flags tell the destination
- * page to auto-open its dialog on arrival, so the click really is the whole
- * gesture.
+ * through nav for it. Where the destination page reads a `?add=1` / `?create=1`
+ * flag, it auto-opens its dialog on arrival, so the click really is the whole
+ * gesture; where no such flag exists, the entry just lands on the page and the
+ * operator finds the action there (no invented flag the page doesn't read). A
+ * `download` entry (see {@link CommandItem.download}) instead lands directly
+ * on a CSV export Route Handler.
  */
 const QUICK_ACTIONS: CommandItem[] = [
   {
@@ -99,6 +113,56 @@ const QUICK_ACTIONS: CommandItem[] = [
     section: "Quick actions",
     keywords: ["preauth", "token", "mint"],
     capability: "keys.write",
+  },
+  {
+    id: "quick-create-user",
+    label: "Create user",
+    // The Users page's add-user dialog has no deep-link flag (unlike
+    // machines/pre-auth-keys) - land on the page and let its own "Add user"
+    // button open it, rather than inventing a flag the page doesn't read.
+    href: "/users",
+    icon: UserPlus,
+    section: "Quick actions",
+    keywords: ["add user", "new user", "person", "account"],
+    capability: "users.write",
+  },
+  {
+    id: "quick-add-idp",
+    label: "Add identity provider",
+    href: "/settings/identity-providers",
+    icon: Fingerprint,
+    section: "Quick actions",
+    keywords: ["oidc", "sso", "idp", "provider", "google", "okta"],
+    capability: "settings.write",
+  },
+  {
+    id: "quick-export-machines",
+    label: "Export machines (CSV)",
+    href: "/machines/export",
+    icon: Download,
+    section: "Quick actions",
+    keywords: ["csv", "download", "inventory", "backup"],
+    capability: "machines.read",
+    download: true,
+  },
+  {
+    id: "quick-approve-routes",
+    label: "Approve pending routes",
+    href: "/routes",
+    icon: CheckCheck,
+    section: "Quick actions",
+    keywords: ["subnets", "exit nodes", "advertised", "approve"],
+    capability: "routes.write",
+  },
+  {
+    id: "quick-export-audit",
+    label: "Export audit log (CSV)",
+    href: "/audit/export",
+    icon: Download,
+    section: "Quick actions",
+    keywords: ["csv", "download", "activity", "trail"],
+    capability: "audit.read",
+    download: true,
   },
 ];
 
@@ -432,7 +496,11 @@ export function CommandPalette({
       setOpen(false);
       const recordId = recordableId(command);
       if (recordId) setRecentIds(writeRecent(recordId));
-      router.push(command.href);
+      if (command.download) {
+        window.location.href = command.href;
+      } else {
+        router.push(command.href);
+      }
     },
     [router],
   );
