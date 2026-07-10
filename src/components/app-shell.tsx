@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { BeaconMark } from "@/components/beacon-mark";
 import { ConsoleSidebar } from "@/components/console-sidebar";
 import { MobileNavDrawer } from "@/components/mobile-nav-drawer";
+import { ShortcutsHelp } from "@/components/shortcuts-help";
 import { Kbd } from "@/components/ui/kbd";
 import { ToastViewport } from "@/components/ui/toast";
 import type { Account } from "@/components/account-menu";
@@ -107,6 +108,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </main>
       <ToastViewport />
+      <ShortcutsHelp />
     </div>
   );
 }
