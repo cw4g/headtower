@@ -17,16 +17,23 @@ import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Chip } from "@/components/ui/chip";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SectionHeading } from "@/components/ui/section-heading";
-import { Table, TableBody, TableHead, Td, Th, Tr } from "@/components/ui/table";
-import { cn } from "@/lib/cn";
-import { AuditFilters, type AuditFacets } from "./audit-filters";
 import {
-  humanizeAction,
-  isoTimestamp,
-  relativeTime,
-  summarizeDetail,
-  targetHref,
-} from "./format";
+  CardRow,
+  CardRowField,
+  CardRowMeta,
+  CardRows,
+  Table,
+  TableBody,
+  TableDesktop,
+  TableHead,
+  Td,
+  Th,
+  Tr,
+} from "@/components/ui/table";
+import { cn } from "@/lib/cn";
+import { AuditDetail } from "./audit-detail";
+import { AuditFilters, type AuditFacets } from "./audit-filters";
+import { humanizeAction, isoTimestamp, relativeTime, targetHref } from "./format";
 
 // The audit trail is live local state read at request time; never prerender it.
 export const dynamic = "force-dynamic";
@@ -161,8 +168,8 @@ export default async function AuditPage({
       ) : !hasAnyRows ? (
         <EmptyState
           icon={ScrollText}
-          title="No audit activity yet"
-          description="Operator actions — renames, approvals, key changes — are recorded here as they happen."
+          title="No operator activity recorded yet"
+          description="Actions appear here as operators make changes."
         />
       ) : (
         <div className="flex flex-col gap-4">
@@ -177,22 +184,33 @@ export default async function AuditPage({
           ) : (
             <>
               <Card>
-                <Table>
-                  <TableHead>
-                    <Tr className="hover:bg-transparent">
-                      <Th>Time</Th>
-                      <Th>Actor</Th>
-                      <Th>Action</Th>
-                      <Th>Target</Th>
-                      <Th>Detail</Th>
-                    </Tr>
-                  </TableHead>
-                  <TableBody>
-                    {entries.map((entry) => (
-                      <AuditRow key={entry.id} entry={entry} actorNames={actorNames} />
-                    ))}
-                  </TableBody>
-                </Table>
+                <TableDesktop>
+                  <Table>
+                    <TableHead>
+                      <Tr className="hover:bg-transparent">
+                        <Th>Time</Th>
+                        <Th>Actor</Th>
+                        <Th>Action</Th>
+                        <Th>Target</Th>
+                        <Th>Detail</Th>
+                      </Tr>
+                    </TableHead>
+                    <TableBody>
+                      {entries.map((entry) => (
+                        <AuditRow key={entry.id} entry={entry} actorNames={actorNames} />
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableDesktop>
+
+                {/* Below `md`, the columns above give way to one entry per
+                    card instead of a table that scrolls the detail column
+                    off-screen. */}
+                <CardRows>
+                  {entries.map((entry) => (
+                    <AuditCard key={entry.id} entry={entry} actorNames={actorNames} />
+                  ))}
+                </CardRows>
               </Card>
 
               <Pagination
@@ -309,7 +327,6 @@ function AuditRow({
   actorNames: Map<string, string>;
 }) {
   const tsDate = entry.ts instanceof Date ? entry.ts : new Date(entry.ts);
-  const detail = summarizeDetail(entry.detail);
 
   return (
     <Tr>
@@ -332,18 +349,58 @@ function AuditRow({
         <TargetCell entry={entry} />
       </Td>
       <Td>
-        {detail ? (
-          <span
-            className="data block max-w-[28rem] truncate text-xs text-ink-muted"
-            title={detail}
-          >
-            {detail}
-          </span>
-        ) : (
-          <span className="text-ink-faint">·</span>
-        )}
+        <AuditDetail detail={entry.detail} className="max-w-[28rem]" />
       </Td>
     </Tr>
+  );
+}
+
+/**
+ * Small-screen counterpart to `AuditRow`: the same time, actor, action,
+ * target, and detail readouts, stacked into one card - the action headline
+ * takes the identity slot the other list cards give their primary column,
+ * with the relative time pinned opposite it.
+ */
+function AuditCard({
+  entry,
+  actorNames,
+}: {
+  entry: AuditEntry;
+  actorNames: Map<string, string>;
+}) {
+  const tsDate = entry.ts instanceof Date ? entry.ts : new Date(entry.ts);
+
+  return (
+    <CardRow>
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
+        <div className="flex items-start justify-between gap-3">
+          <span className="flex min-w-0 flex-col leading-tight">
+            <span className="font-medium text-ink">{humanizeAction(entry.action)}</span>
+            <span className="data text-xs text-ink-faint">{entry.action}</span>
+          </span>
+          <span
+            className="data shrink-0 whitespace-nowrap text-xs text-ink-muted"
+            title={isoTimestamp(tsDate)}
+          >
+            {relativeTime(tsDate)}
+          </span>
+        </div>
+        <CardRowMeta>
+          <CardRowField label="Actor">
+            {/* title carries the stable actor id behind the resolved name. */}
+            <span className="data" title={entry.actor}>
+              {actorName(entry.actor, actorNames)}
+            </span>
+          </CardRowField>
+          <CardRowField label="Target">
+            <TargetCell entry={entry} />
+          </CardRowField>
+          <CardRowField label="Detail" className="col-span-2">
+            <AuditDetail detail={entry.detail} />
+          </CardRowField>
+        </CardRowMeta>
+      </div>
+    </CardRow>
   );
 }
 
