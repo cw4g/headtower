@@ -29,17 +29,33 @@ export async function startLogin(formData: FormData): Promise<void> {
   const authorizationUrl = await beginLogin(
     origin,
     providerId,
-    safeNext(formData.get("next")),
+    safeNext(formData.get("next"), origin),
   );
 
   // External redirect to the identity provider; throws NEXT_REDIRECT.
   redirect(authorizationUrl);
 }
 
-/** Only honour a same-app return path (leading single slash), else drop it. */
-function safeNext(value: FormDataEntryValue | null): string | undefined {
+/**
+ * Only honour a same-app return path, else drop it. "//host" and "/\host" both
+ * resolve to a foreign origin (the browser and `new URL` treat a backslash as a
+ * slash), so reject a slash OR backslash right after the leading slash, then
+ * confirm the path resolves back to our own origin before trusting it.
+ */
+function safeNext(
+  value: FormDataEntryValue | null,
+  origin: string,
+): string | undefined {
   if (typeof value !== "string") return undefined;
-  if (!value.startsWith("/") || value.startsWith("//")) return undefined;
+  if (!value.startsWith("/")) return undefined;
+  if (value[1] === "/" || value[1] === "\\") return undefined;
+  try {
+    if (new URL(value, origin).origin !== new URL(origin).origin) {
+      return undefined;
+    }
+  } catch {
+    return undefined;
+  }
   return value;
 }
 

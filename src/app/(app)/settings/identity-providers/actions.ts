@@ -18,6 +18,7 @@ import {
   updateProvider,
   type ProviderInput,
 } from "@/lib/auth/oidc-providers";
+import { clearOidcConfigCache } from "@/lib/auth/oidc";
 import { ConfigError } from "@/lib/config";
 import { audit, authorize } from "@/lib/authz";
 
@@ -38,12 +39,16 @@ export async function addProvider(
   const gate = await authorize("settings.write");
   if (!gate.ok) return { status: "error", error: gate.reason };
 
+  let id: string;
   try {
-    createProvider(input);
+    id = createProvider(input);
   } catch (err) {
     return { status: "error", error: describe(err) };
   }
 
+  // A fresh id can't be cached yet, but evict it defensively (a reused id from
+  // a prior delete+recreate would otherwise serve stale discovery).
+  clearOidcConfigCache(id);
   await audit(gate.session, {
     action: "config.oidc_provider.create",
     targetType: "config",
@@ -67,6 +72,8 @@ export async function editProvider(
     return { status: "error", error: describe(err) };
   }
 
+  // A changed issuer or rotated secret must not keep serving stale discovery.
+  clearOidcConfigCache(id);
   await audit(gate.session, {
     action: "config.oidc_provider.update",
     targetType: "config",
@@ -87,6 +94,8 @@ export async function toggleProvider(
 
   setProviderEnabled(id, enabled);
 
+  // Disabling must stop the provider taking logins immediately, not next boot.
+  clearOidcConfigCache(id);
   await audit(gate.session, {
     action: enabled ? "config.oidc_provider.enable" : "config.oidc_provider.disable",
     targetType: "config",
@@ -103,6 +112,8 @@ export async function deleteProvider(id: string): Promise<ProviderActionState> {
 
   removeProvider(id);
 
+  // Drop any cached discovery for the now-gone provider.
+  clearOidcConfigCache(id);
   await audit(gate.session, {
     action: "config.oidc_provider.delete",
     targetType: "config",

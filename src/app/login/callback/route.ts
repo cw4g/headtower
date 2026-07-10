@@ -77,7 +77,9 @@ export async function GET(request: NextRequest): Promise<Response> {
     ip: clientIp(request),
   });
 
-  const response = NextResponse.redirect(appUrl(origin, safeReturn(transaction.returnTo)));
+  const response = NextResponse.redirect(
+    appUrl(origin, safeReturn(origin, transaction.returnTo)),
+  );
   response.cookies.set(SESSION_COOKIE, token, sessionCookieOptions(expiresAt));
   return clearTransaction(response);
 }
@@ -108,10 +110,21 @@ function clearTransaction(response: NextResponse): NextResponse {
   return response;
 }
 
-/** Only honour a same-app return path; otherwise land on the console root. */
-function safeReturn(value: string | null): string {
-  if (value && value.startsWith("/") && !value.startsWith("//")) return value;
-  return "/";
+/**
+ * Only honour a same-app return path; otherwise land on the console root.
+ * "//host" and "/\host" both resolve to a foreign origin (the browser and
+ * `new URL` treat a backslash as a slash), so reject a slash OR backslash right
+ * after the leading slash, then confirm it resolves back to our own origin.
+ */
+function safeReturn(origin: string, value: string | null): string {
+  if (!value || !value.startsWith("/")) return "/";
+  if (value[1] === "/" || value[1] === "\\") return "/";
+  try {
+    if (new URL(value, origin).origin !== new URL(origin).origin) return "/";
+  } catch {
+    return "/";
+  }
+  return value;
 }
 
 /** Best-effort client IP from forwarding headers, for the audit trail. */

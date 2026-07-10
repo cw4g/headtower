@@ -25,6 +25,7 @@ import {
   listProviders,
   setProviderEnabled,
 } from "@/lib/auth/oidc-providers";
+import { clearOidcConfigCache } from "@/lib/auth/oidc";
 import type { Session } from "@/lib/auth";
 import { audit, authorize } from "@/lib/authz";
 import {
@@ -59,6 +60,9 @@ async function disableAll(session: Session): Promise<SaveAuthState> {
     if (provider.enabled) setProviderEnabled(provider.id, false);
   }
 
+  // This flip spans the legacy slot plus every row; drop the whole cache so no
+  // just-disabled provider keeps accepting logins from a cached Configuration.
+  clearOidcConfigCache();
   await audit(session, {
     action: "config.authentication",
     targetType: "config",
@@ -95,6 +99,8 @@ async function enableAll(session: Session): Promise<SaveAuthState> {
     if (!provider.enabled) setProviderEnabled(provider.id, true);
   }
 
+  // Re-enabling spans every provider; clear the whole cache so each rediscovers.
+  clearOidcConfigCache();
   await audit(session, {
     action: "config.authentication",
     targetType: "config",

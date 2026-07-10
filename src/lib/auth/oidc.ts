@@ -160,6 +160,21 @@ export function getOidcConfiguration(
 }
 
 /**
+ * Drop cached discovery Configurations so a rotated secret, changed issuer, or
+ * disabled/removed provider takes effect without a process restart. Pass a
+ * provider id to evict just that provider, or nothing to clear every entry.
+ * Provider mutators (Settings > Identity providers / Authentication) call this
+ * after any create/update/delete/enable/disable.
+ */
+export function clearOidcConfigCache(providerId?: string): void {
+  if (providerId === undefined) {
+    configurationCache.clear();
+    return;
+  }
+  configurationCache.delete(providerId);
+}
+
+/**
  * Build the callback `redirect_uri`, which must match exactly at exchange
  * time. The SAME URL for every provider - which provider is in flight is
  * tracked by {@link PROVIDER_COOKIE}, not by this URL.

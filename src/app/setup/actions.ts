@@ -23,6 +23,10 @@ import {
   type ConnectionTestResult,
 } from "@/lib/config";
 import { recordAudit } from "@/lib/audit";
+import {
+  MIN_SESSION_SECRET_LENGTH,
+  sessionSecretState,
+} from "@/app/(app)/settings/authentication/session-secret";
 
 /** Live-probe a candidate connection. Refused once the app is already set up. */
 export async function testConnectionAction(input: {
@@ -57,6 +61,23 @@ export async function completeSetupAction(
 ): Promise<CompleteSetupResult> {
   // Already configured: nothing to persist; just enter the console.
   if (getConfig().headscale) redirect("/");
+
+  // Mirror the Authentication view's guard: OIDC sign-in signs its session
+  // cookie with HEADTOWER_SESSION_SECRET, which proxy.ts verifies before any DB
+  // read. Enabling OIDC here without it would lock the operator out on the very
+  // next request, so refuse it with a reason the wizard surfaces inline.
+  if (input.oidc) {
+    const secret = sessionSecretState();
+    if (secret.status !== "ok") {
+      return {
+        ok: false,
+        error:
+          secret.status === "missing"
+            ? `Set HEADTOWER_SESSION_SECRET (at least ${MIN_SESSION_SECRET_LENGTH} characters) before enabling single sign-on, or you will be locked out.`
+            : `HEADTOWER_SESSION_SECRET is too short (${secret.length} chars). Use at least ${MIN_SESSION_SECRET_LENGTH} characters before enabling single sign-on.`,
+      };
+    }
+  }
 
   try {
     setConfig({ headscale: input.headscale, oidc: input.oidc });
