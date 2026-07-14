@@ -383,13 +383,16 @@ export function AddDeviceDialog({
                 required
                 description="The device is enrolled and assigned to this user."
               >
+                {/* Submits the handle (the Headscale user name), not the id:
+                    the register endpoint resolves the owner by name. The
+                    "create key" select above correctly submits the id instead. */}
                 <Select
                   id="add-device-register-user"
                   name="user"
-                  defaultValue={users[0]?.id}
+                  defaultValue={users[0]?.handle}
                 >
                   {users.map((user) => (
-                    <option key={user.id} value={user.id}>
+                    <option key={user.id} value={user.handle}>
                       {user.label}
                       {user.handle && user.handle !== user.label
                         ? ` (@${user.handle})`

@@ -3,7 +3,7 @@
  *
  *   GET    /api/v1/node                          list()
  *   GET    /api/v1/node/{id}                     get(id)
- *   POST   /api/v1/node/register?user=&key=      register(user, key)
+ *   POST   /api/v1/auth/register  { user, auth_id }  register(user, key)
  *   POST   /api/v1/node/{id}/rename/{name}       rename(id, name)
  *   POST   /api/v1/node/{id}/tags        { tags }    setTags(id, tags)
  *   POST   /api/v1/node/{id}/approve_routes { routes } approveRoutes(id, routes)
@@ -14,7 +14,7 @@
  * Server-only; see ./client.
  */
 
-import { request } from "./client";
+import { HeadscaleRequestError, request } from "./client";
 import type {
   ListNodesResponse,
   Node,
@@ -51,10 +51,27 @@ export const nodes = {
   /**
    * Register a node that began interactive login (`tailscale up --login-server`
    * with no auth key) and printed a registration key. `user` is the owning
-   * user's numeric id (as with pre-auth keys); `key` is the registration key the
-   * device showed (a `nodekey:...` / `mkey:...` value). Returns the new node.
+   * user's name (Headscale resolves the owner by name, not id); `key` is the
+   * registration key the device showed (a `hskey-authreq-...` value on 0.29, or
+   * a nodekey on older Headscale). Returns the new node.
+   *
+   * Uses the 0.29 `POST /api/v1/auth/register` endpoint - it takes both the
+   * owner name and the registration key (`auth_id`) in the JSON body. Older
+   * Headscale has no auth service and answers 404, so this degrades gracefully to
+   * the now-deprecated `POST /api/v1/node/register`, still passing the name.
    */
-  async register(user: NodeId, key: string): Promise<Node> {
+  async register(user: string, key: string): Promise<Node> {
+    try {
+      const res = await request<NodeResponse>("/v1/auth/register", {
+        method: "POST",
+        body: { user, auth_id: key },
+      });
+      return res.node;
+    } catch (err) {
+      // Only a missing auth service (404) warrants the fallback; anything else
+      // is a real failure and should surface.
+      if (!(err instanceof HeadscaleRequestError) || err.status !== 404) throw err;
+    }
     const res = await request<NodeResponse>("/v1/node/register", {
       method: "POST",
       query: { user, key },

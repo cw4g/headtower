@@ -115,6 +115,10 @@ export type RegisterDeviceState =
  * authkey) by handing Headscale the registration key the device printed.
  * Unlike `createDeviceKey`, there's no key to reveal here: the device is
  * enrolled the moment this succeeds.
+ *
+ * `input.user` is the owning user's name, not the numeric id - Headscale's
+ * register endpoint resolves the owner by name (the dialog's register-mode
+ * select submits the handle for that reason).
  */
 export async function registerDevice(input: {
   user: string;
