@@ -41,6 +41,20 @@ export interface LintOptions {
   knownUsers?: string[];
 }
 
+/**
+ * Match a policy user reference against the tailnet's user list.
+ *
+ * A bare user is written with a trailing `@` in a policy -- Headscale's policy
+ * reference spells it exactly that way (`"alice@"`) -- while the API reports users
+ * as a name plus an optional email. Comparing verbatim therefore flags the
+ * documented spelling as unknown, so `alice@` must also match the user `alice`.
+ */
+function matchesKnownUser(token: string, knownUsers: Set<string>): boolean {
+  const needle = token.toLowerCase();
+  if (knownUsers.has(needle)) return true;
+  return needle.endsWith("@") && knownUsers.has(needle.slice(0, -1));
+}
+
 /** A reference site to scan: its tokens and the location label for findings. */
 interface RefSite {
   location: string;
@@ -136,7 +150,7 @@ export function lintPolicy(
           location: site.location,
           token,
         });
-      } else if (kind === "user" && knownUsers && !knownUsers.has(token.toLowerCase())) {
+      } else if (kind === "user" && knownUsers && !matchesKnownUser(token, knownUsers)) {
         findings.push({
           id: `unknown-user:${site.location}:${token}`,
           severity: "warn",
