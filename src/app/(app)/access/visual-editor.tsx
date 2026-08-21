@@ -316,7 +316,11 @@ export function VisualEditor({ model, onChange }: VisualEditorProps) {
                   suggestions={tagNames}
                 />
               </Field>
-              <CapabilityList app={grant.app} />
+              <CapabilityEditor
+                ariaPrefix={`Grant ${i + 1}`}
+                app={grant.app}
+                onChange={(app) => patchGrant(i, { app })}
+              />
             </div>
           </RuleShell>
         ))}
@@ -537,7 +541,11 @@ export function VisualEditor({ model, onChange }: VisualEditorProps) {
                   suggestions={ATTR_SUGGESTIONS}
                 />
               </Field>
-              <CapabilityList app={entry.app} />
+              <CapabilityEditor
+                ariaPrefix={`Node attribute ${i + 1}`}
+                app={entry.app}
+                onChange={(app) => patchNodeAttr(i, { app })}
+              />
             </div>
           </RuleShell>
         ))}
@@ -640,28 +648,139 @@ function CapabilityKind({ grant }: { grant: GrantEntry }) {
   );
 }
 
+/** One capability row while it is being edited: the payload stays text. */
+interface CapabilityRow {
+  name: string;
+  text: string;
+}
+
+const BLANK_PAYLOAD = "[\n  {}\n]";
+
+function toRows(app: Record<string, unknown> | undefined): CapabilityRow[] {
+  if (!app) return [];
+  return Object.entries(app).map(([name, value]) => ({
+    name,
+    text: JSON.stringify(value, null, 2),
+  }));
+}
+
 /**
- * Application capabilities, read-only on purpose. Tailscale "treats application
- * capability parameters as opaque JSON objects" and the capabilities themselves
- * are defined by the applications, not by Tailscale - so a form would be guessing.
- * The names are listed; the payload is edited in the JSON tab and rides through
- * every save untouched.
+ * Rebuild the capability map from the rows, or report why it cannot be built. The
+ * payload must be a JSON array: Tailscale's capability names map to "an array of
+ * JSON objects". Its *contents* are never inspected - the policy engine treats
+ * them as opaque, so neither do we.
  */
-function CapabilityList({ app }: { app?: Record<string, unknown> }) {
-  const names = app ? Object.keys(app) : [];
-  if (names.length === 0) return null;
+function fromRows(rows: CapabilityRow[]): {
+  app?: Record<string, unknown>;
+  error?: string;
+} {
+  const app: Record<string, unknown> = {};
+  for (const row of rows) {
+    const name = row.name.trim();
+    if (name === "") return { error: "A capability needs a name." };
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(row.text);
+    } catch (err) {
+      return { error: `${name}: ${err instanceof Error ? err.message : "invalid JSON"}` };
+    }
+    if (!Array.isArray(parsed)) {
+      return { error: `${name}: the payload must be a JSON array.` };
+    }
+    app[name] = parsed;
+  }
+  return Object.keys(app).length > 0 ? { app } : {};
+}
+
+interface CapabilityEditorProps {
+  ariaPrefix: string;
+  app?: Record<string, unknown>;
+  onChange: (next: Record<string, unknown> | undefined) => void;
+}
+
+/**
+ * Editor for application capabilities: the name is a plain field, the payload is
+ * JSON. Two things it is careful about.
+ *
+ * Half-typed JSON never reaches the model - the text lives here and is handed
+ * upwards only once it parses, so the document cannot be corrupted mid-keystroke
+ * and the invalid state is reported inline instead.
+ *
+ * The rows re-sync when the policy changes *elsewhere* (the JSON tab, another
+ * field) but not in response to our own commit, which would otherwise reformat
+ * the payload under the cursor.
+ */
+function CapabilityEditor({ ariaPrefix, app, onChange }: CapabilityEditorProps) {
+  const [rows, setRows] = React.useState<CapabilityRow[]>(() => toRows(app));
+  const [error, setError] = React.useState<string | null>(null);
+
+  const incomingKey = React.useMemo(() => JSON.stringify(app ?? null), [app]);
+  const lastSentKey = React.useRef(incomingKey);
+  React.useEffect(() => {
+    if (incomingKey !== lastSentKey.current) {
+      lastSentKey.current = incomingKey;
+      setRows(toRows(app));
+      setError(null);
+    }
+  }, [incomingKey, app]);
+
+  function commit(next: CapabilityRow[]) {
+    setRows(next);
+    const result = fromRows(next);
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
+    setError(null);
+    lastSentKey.current = JSON.stringify(result.app ?? null);
+    onChange(result.app);
+  }
+
+  const patchRow = (i: number, patch: Partial<CapabilityRow>) =>
+    commit(rows.map((row, idx) => (idx === i ? { ...row, ...patch } : row)));
+
   return (
     <Field
       label="Application capabilities"
       className="sm:col-span-2"
-      description="Opaque payload, preserved verbatim. Edit it in the JSON tab."
+      description="Payload is a JSON array; its contents are opaque to Headscale and to Tailscale's policy engine."
+      error={error ?? undefined}
     >
-      <div className="flex flex-wrap gap-1.5">
-        {names.map((name) => (
-          <Chip key={name} mono variant="outline">
-            {name}
-          </Chip>
+      <div className="flex flex-col gap-2">
+        {rows.map((row, i) => (
+          <div key={i} className="rounded-control border border-line bg-surface-2/40 p-2.5">
+            <div className="mb-2 flex items-center gap-2">
+              <Input
+                mono
+                aria-label={`${ariaPrefix} capability ${i + 1} name`}
+                value={row.name}
+                onChange={(event) => patchRow(i, { name: event.target.value })}
+                placeholder="tailscale.com/cap/drive"
+                className="h-8 text-xs"
+              />
+              <button
+                type="button"
+                onClick={() => commit(rows.filter((_, idx) => idx !== i))}
+                aria-label={`Remove ${ariaPrefix} capability ${i + 1}`}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-control border border-transparent text-ink-faint transition-colors hover:border-critical-500/30 hover:bg-critical-500/10 hover:text-critical-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-critical-500/40"
+              >
+                <Trash2 className="h-3.5 w-3.5" aria-hidden />
+              </button>
+            </div>
+            <textarea
+              aria-label={`${ariaPrefix} capability ${i + 1} payload`}
+              value={row.text}
+              onChange={(event) => patchRow(i, { text: event.target.value })}
+              rows={4}
+              spellCheck={false}
+              className="data w-full resize-y rounded-control border border-line-strong bg-surface-2 px-3 py-2 text-[13px] leading-[1.4rem] text-ink transition-colors placeholder:text-ink-faint focus:outline-none focus-visible:border-beacon-500 focus-visible:ring-2 focus-visible:ring-beacon-500/40"
+            />
+          </div>
         ))}
+        <AddButton
+          label="Add capability"
+          onClick={() => setRows([...rows, { name: "", text: BLANK_PAYLOAD }])}
+        />
       </div>
     </Field>
   );

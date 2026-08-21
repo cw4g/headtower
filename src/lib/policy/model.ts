@@ -291,16 +291,30 @@ function serializeSsh(rule: SshRule): Record<string, unknown> {
 }
 
 /**
+ * Write back an edited `app` map. Opaque does not mean read-only: the editor may
+ * change these, so a modelled `app` always wins. The key is dropped only when we
+ * actually modelled it -- an `app` that parse skipped because it was not an object
+ * stays on `raw` untouched instead of being deleted.
+ */
+function emitApp(
+  out: Record<string, unknown>,
+  raw: Record<string, unknown>,
+  app: Record<string, unknown> | undefined,
+): void {
+  if (app && Object.keys(app).length > 0) out.app = app;
+  else if (isObject(raw.app)) delete out.app;
+}
+
+/**
  * `target` is mandatory, so it is always written; `attr` goes through {@link emit}
- * because an entry may carry only `app`. `app` itself rides through on `raw` and
- * is only written when a caller supplied one on a brand-new entry.
+ * because an entry may carry only `app`.
  */
 function serializeNodeAttr(entry: NodeAttrEntry): Record<string, unknown> {
   const raw = entry.raw ?? {};
   const out: Record<string, unknown> = { ...raw };
   out.target = [...entry.target];
   emit(out, raw, "attr", [...entry.attr]);
-  if (entry.app && !("app" in raw)) out.app = entry.app;
+  emitApp(out, raw, entry.app);
   return out;
 }
 
@@ -316,7 +330,7 @@ function serializeGrant(entry: GrantEntry): Record<string, unknown> {
   out.dst = [...entry.dst];
   emit(out, raw, "ip", [...entry.ip]);
   emit(out, raw, "via", [...entry.via]);
-  if (entry.app && !("app" in raw)) out.app = entry.app;
+  emitApp(out, raw, entry.app);
   return out;
 }
 

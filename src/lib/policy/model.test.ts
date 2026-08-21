@@ -247,6 +247,57 @@ test("a nodeAttrs entry carrying only app survives without an attr key", () => {
   });
 });
 
+// --- editing the opaque app payload ----------------------------------------
+
+test("an edited capability payload is written back", () => {
+  const { model, root } = parsePolicy(TAILDRIVE);
+  model.grants[0].app = {
+    "tailscale.com/cap/drive": [{ shares: ["photos"], access: "ro" }],
+  };
+
+  const after = JSON.parse(serializePolicy(model, root));
+  assert.deepStrictEqual(after.grants[0].app, {
+    "tailscale.com/cap/drive": [{ shares: ["photos"], access: "ro" }],
+  });
+});
+
+test("a capability added to a nodeAttrs entry is written back", () => {
+  const { model, root } = parsePolicy(TAILDRIVE);
+  model.nodeAttrs[0].app = { "example.com/cap/thing": [{ level: 1 }] };
+
+  const after = JSON.parse(serializePolicy(model, root));
+  assert.deepStrictEqual(after.nodeAttrs[0].app, {
+    "example.com/cap/thing": [{ level: 1 }],
+  });
+  assert.deepEqual(after.nodeAttrs[0].attr, ["drive:share"], "attr untouched");
+});
+
+test("removing every capability drops the app key", () => {
+  const { model, root } = parsePolicy(TAILDRIVE);
+  model.grants[0].app = undefined;
+
+  const after = JSON.parse(serializePolicy(model, root));
+  assert.equal("app" in after.grants[0], false);
+});
+
+test("an empty capability map drops the app key too", () => {
+  const { model, root } = parsePolicy(TAILDRIVE);
+  model.grants[0].app = {};
+
+  const after = JSON.parse(serializePolicy(model, root));
+  assert.equal("app" in after.grants[0], false);
+});
+
+/** A malformed `app` was never modelled, so it must not be deleted either. */
+test("a non-object app survives untouched", () => {
+  const src = `{ "grants": [ { "src": ["a@"], "dst": ["b"], "app": null } ] }`;
+  assert.equal(parsePolicy(src).model.grants[0].app, undefined, "not modelled");
+
+  const after = JSON.parse(roundTripPolicy(src));
+  assert.equal("app" in after.grants[0], true);
+  assert.equal(after.grants[0].app, null);
+});
+
 test("unknown fields inside an acl rule pass through", () => {
   const src = `{
     "acls": [
