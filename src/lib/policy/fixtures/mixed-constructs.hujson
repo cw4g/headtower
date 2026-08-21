@@ -1,0 +1,69 @@
+{
+  // A deliberately broad specimen: every modelled section plus two keys the
+  // model does not own (`randomizeClientPort`, `tests`), so the contract tests
+  // have something to prove they pass through untouched.
+  "randomizeClientPort": true,
+
+  "groups": {
+    "group:eng": ["alice@", "bob@"],
+    "group:ops": ["carol@"]
+  },
+
+  "tagOwners": {
+    "tag:router": ["group:ops"],
+    "tag:db": ["group:eng"]
+  },
+
+  "hosts": {
+    "office": "10.0.0.0/24"
+  },
+
+  "acls": [
+    { "action": "accept", "src": ["group:eng"], "dst": ["tag:db:5432"] }
+  ],
+
+  "ssh": [
+    {
+      "action": "check",
+      "src": ["group:ops"],
+      "dst": ["tag:router"],
+      "users": ["autogroup:nonroot"]
+    }
+  ],
+
+  "nodeAttrs": [
+    { "target": ["*"], "attr": ["disable-captive-portal-detection"] },
+    {
+      "target": ["tag:router"],
+      "app": { "tailscale.com/app-connectors": [{ "name": "github", "domains": ["github.com"] }] }
+    }
+  ],
+
+  "grants": [
+    // ip + via: routed through a tagged subnet router
+    {
+      "src": ["group:eng"],
+      "dst": ["office"],
+      "ip": ["tcp:22", "udp:53"],
+      "via": ["tag:router"]
+    },
+    // app only, no ip key at all
+    {
+      "src": ["autogroup:member"],
+      "dst": ["tag:db"],
+      "app": { "tailscale.com/cap/tailsql": [{ "dbs": ["*"] }] }
+    }
+  ],
+
+  "autoApprovers": {
+    "routes": {
+      "10.0.0.0/24": ["tag:router"]
+    },
+    "exitNode": ["tag:router"]
+  },
+
+  // Headscale >= 0.29 evaluates this block itself on `policy set` / `policy check`.
+  "tests": [
+    { "src": "alice@", "accept": ["tag:db:5432"] }
+  ]
+}

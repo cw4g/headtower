@@ -1,0 +1,34 @@
+{
+  // Host alias for the Taildrive file server
+  "hosts": {
+    "fileserver": "100.64.0.10/32"
+  },
+
+  "tagOwners": {
+    "tag:server": ["alice@"]
+  },
+
+  "acls": [
+    { "action": "accept", "src": ["alice@"], "dst": ["*:*"] },
+    { "action": "accept", "src": ["alice@"], "dst": ["autogroup:internet:*"] }
+  ],
+
+  // Taildrive: only the file server may export shares, every personal
+  // (untagged) device may consume them.
+  "nodeAttrs": [
+    { "target": ["fileserver"], "attr": ["drive:share"] },
+    { "target": ["autogroup:member"], "attr": ["drive:access"] }
+  ],
+
+  // Per-share access mode. "rw" grants full write/delete access to all
+  // shares exported by the file server; use "ro" for read-only.
+  "grants": [
+    {
+      "src": ["autogroup:member"],
+      "dst": ["fileserver"],
+      "app": {
+        "tailscale.com/cap/drive": [{ "shares": ["*"], "access": "rw" }]
+      }
+    }
+  ]
+}
