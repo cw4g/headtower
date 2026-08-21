@@ -3,11 +3,13 @@
 import * as React from "react";
 import {
   DoorOpen,
+  KeyRound,
   Network,
   Plus,
   Route,
   Server,
   ShieldCheck,
+  SlidersHorizontal,
   SquareTerminal,
   Tag as TagIcon,
   Trash2,
@@ -26,11 +28,29 @@ import { TokenInput } from "@/components/ui/token-input";
 import { cn } from "@/lib/cn";
 import type {
   AclRule,
+  GrantEntry,
   HostEntry,
   NamedList,
+  NodeAttrEntry,
   PolicyModel,
   SshRule,
 } from "@/lib/policy";
+
+/**
+ * Node attributes Headscale's policy reference documents, offered as completions.
+ * Deliberately suggestions and not validation: that reference says "At least the
+ * following node attributes are currently supported", so the set is open and
+ * rejecting an unlisted value would be wrong.
+ */
+const ATTR_SUGGESTIONS = [
+  "drive:share",
+  "drive:access",
+  "magicdns-aaaa",
+  "disable-ipv4",
+  "randomize-client-port",
+  "disable-captive-portal-detection",
+  "nextdns:no-device-info",
+];
 
 interface VisualEditorProps {
   model: PolicyModel;
@@ -54,6 +74,13 @@ function collectAutogroups(model: PolicyModel): string[] {
     scan(rule.dst);
     scan(rule.users);
   }
+  for (const grant of model.grants) {
+    scan(grant.src);
+    scan(grant.dst);
+  }
+  // A Taildrive policy names autogroup:member only here, so miss this and the
+  // completions would not offer a token the document already uses.
+  for (const entry of model.nodeAttrs) scan(entry.target);
   for (const group of model.groups) scan(group.values);
   for (const tag of model.tagOwners) scan(tag.values);
   for (const route of model.autoApprovers.routes) scan(route.values);
@@ -102,6 +129,27 @@ export function VisualEditor({ model, onChange }: VisualEditorProps) {
     setAcls(model.acls.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
   const removeAcl = (i: number) =>
     setAcls(model.acls.filter((_, idx) => idx !== i));
+
+  // --- Grants --------------------------------------------------------------
+  const setGrants = (grants: GrantEntry[]) => onChange({ ...model, grants });
+  const addGrant = () =>
+    setGrants([...model.grants, { src: [], dst: [], ip: [], via: [] }]);
+  const patchGrant = (i: number, patch: Partial<GrantEntry>) =>
+    setGrants(model.grants.map((g, idx) => (idx === i ? { ...g, ...patch } : g)));
+  const removeGrant = (i: number) =>
+    setGrants(model.grants.filter((_, idx) => idx !== i));
+
+  // --- Node attributes -----------------------------------------------------
+  const setNodeAttrs = (nodeAttrs: NodeAttrEntry[]) =>
+    onChange({ ...model, nodeAttrs });
+  const addNodeAttr = () =>
+    setNodeAttrs([...model.nodeAttrs, { target: [], attr: [] }]);
+  const patchNodeAttr = (i: number, patch: Partial<NodeAttrEntry>) =>
+    setNodeAttrs(
+      model.nodeAttrs.map((e, idx) => (idx === i ? { ...e, ...patch } : e)),
+    );
+  const removeNodeAttr = (i: number) =>
+    setNodeAttrs(model.nodeAttrs.filter((_, idx) => idx !== i));
 
   // --- SSH rules (ssh) -----------------------------------------------------
   const setSsh = (ssh: SshRule[]) => onChange({ ...model, ssh });
@@ -204,6 +252,71 @@ export function VisualEditor({ model, onChange }: VisualEditorProps) {
                   suggestions={srcDstSuggestions}
                 />
               </Field>
+            </div>
+          </RuleShell>
+        ))}
+      </SectionCard>
+
+      {/* Grants ------------------------------------------------------------ */}
+      <SectionCard
+        icon={KeyRound}
+        title="Grants"
+        hint="The successor to an access rule: ports, routing, or an application capability."
+        count={model.grants.length}
+        addLabel="Add grant"
+        onAdd={addGrant}
+        emptyText="No grants. Headscale 0.29 and newer accept these alongside access rules."
+      >
+        {model.grants.map((grant, i) => (
+          <RuleShell
+            key={i}
+            label={`grant ${i + 1}`}
+            onRemove={() => removeGrant(i)}
+            header={<CapabilityKind grant={grant} />}
+          >
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Source">
+                <TokenInput
+                  ariaLabel={`Grant ${i + 1} sources`}
+                  values={grant.src}
+                  onChange={(src) => patchGrant(i, { src })}
+                  placeholder="group:eng, autogroup:member"
+                  suggestions={srcDstSuggestions}
+                />
+              </Field>
+              <Field label="Destination">
+                <TokenInput
+                  ariaLabel={`Grant ${i + 1} destinations`}
+                  values={grant.dst}
+                  onChange={(dst) => patchGrant(i, { dst })}
+                  placeholder="tag:db, fileserver"
+                  suggestions={srcDstSuggestions}
+                />
+              </Field>
+              <Field
+                label="Ports"
+                description="Network capability, e.g. tcp:443. A grant may carry only an application capability instead."
+              >
+                <TokenInput
+                  ariaLabel={`Grant ${i + 1} ports`}
+                  values={grant.ip}
+                  onChange={(ip) => patchGrant(i, { ip })}
+                  placeholder="tcp:443, udp:53"
+                />
+              </Field>
+              <Field
+                label="Via"
+                description="Route the traffic through a tagged subnet router or exit node."
+              >
+                <TokenInput
+                  ariaLabel={`Grant ${i + 1} via`}
+                  values={grant.via}
+                  onChange={(via) => patchGrant(i, { via })}
+                  placeholder="tag:router"
+                  suggestions={tagNames}
+                />
+              </Field>
+              <CapabilityList app={grant.app} />
             </div>
           </RuleShell>
         ))}
@@ -386,6 +499,50 @@ export function VisualEditor({ model, onChange }: VisualEditorProps) {
         ))}
       </SectionCard>
 
+      {/* Node attributes --------------------------------------------------- */}
+      <SectionCard
+        icon={SlidersHorizontal}
+        title="Node attributes"
+        hint="Capabilities handed to every node matching a target."
+        count={model.nodeAttrs.length}
+        addLabel="Add attribute"
+        onAdd={addNodeAttr}
+        emptyText="No node attributes. Taildrive, for one, needs drive:share and drive:access here."
+      >
+        {model.nodeAttrs.map((entry, i) => (
+          <RuleShell
+            key={i}
+            label={`attribute ${i + 1}`}
+            onRemove={() => removeNodeAttr(i)}
+          >
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Targets">
+                <TokenInput
+                  ariaLabel={`Node attribute ${i + 1} targets`}
+                  values={entry.target}
+                  onChange={(target) => patchNodeAttr(i, { target })}
+                  placeholder="tag:server, autogroup:member, *"
+                  suggestions={srcDstSuggestions}
+                />
+              </Field>
+              <Field
+                label="Attributes"
+                description="Completions cover the documented ones; the set is open, so anything is accepted."
+              >
+                <TokenInput
+                  ariaLabel={`Node attribute ${i + 1} attributes`}
+                  values={entry.attr}
+                  onChange={(attr) => patchNodeAttr(i, { attr })}
+                  placeholder="drive:share"
+                  suggestions={ATTR_SUGGESTIONS}
+                />
+              </Field>
+              <CapabilityList app={entry.app} />
+            </div>
+          </RuleShell>
+        ))}
+      </SectionCard>
+
       {/* Auto-approvers ---------------------------------------------------- */}
       <Card>
         <CardHeader>
@@ -469,6 +626,46 @@ export function VisualEditor({ model, onChange }: VisualEditorProps) {
 }
 
 /* -------------------------------------------------------------------------- */
+
+/**
+ * Which capability a grant actually carries. Worth surfacing: an `app`-only grant
+ * looks empty in the Ports field, and a grant with neither is inert.
+ */
+function CapabilityKind({ grant }: { grant: GrantEntry }) {
+  const kinds = [grant.ip.length > 0 && "ip", grant.app && "app"].filter(Boolean);
+  return (
+    <Chip mono variant={kinds.length > 0 ? "default" : "outline"}>
+      {kinds.length > 0 ? kinds.join(" + ") : "no capability"}
+    </Chip>
+  );
+}
+
+/**
+ * Application capabilities, read-only on purpose. Tailscale "treats application
+ * capability parameters as opaque JSON objects" and the capabilities themselves
+ * are defined by the applications, not by Tailscale - so a form would be guessing.
+ * The names are listed; the payload is edited in the JSON tab and rides through
+ * every save untouched.
+ */
+function CapabilityList({ app }: { app?: Record<string, unknown> }) {
+  const names = app ? Object.keys(app) : [];
+  if (names.length === 0) return null;
+  return (
+    <Field
+      label="Application capabilities"
+      className="sm:col-span-2"
+      description="Opaque payload, preserved verbatim. Edit it in the JSON tab."
+    >
+      <div className="flex flex-wrap gap-1.5">
+        {names.map((name) => (
+          <Chip key={name} mono variant="outline">
+            {name}
+          </Chip>
+        ))}
+      </div>
+    </Field>
+  );
+}
 
 function GroupLabel({ children }: { children: React.ReactNode }) {
   return (
