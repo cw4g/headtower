@@ -24,6 +24,8 @@ export {
   type SshRule,
   type NamedList,
   type HostEntry,
+  type NodeAttrEntry,
+  type GrantEntry,
   type AutoApprovers,
 } from "./model";
 

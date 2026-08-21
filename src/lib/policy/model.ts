@@ -56,6 +56,43 @@ export interface AutoApprovers {
   exitNode: string[];
 }
 
+/**
+ * A `nodeAttrs` entry (Headscale >= 0.29): capabilities handed to every node
+ * matching `target`.
+ *
+ * `attr` carries the key-only attributes (`drive:share`, `magicdns-aaaa`, ...).
+ * The set is open -- Headscale's policy reference says "At least the following
+ * node attributes are currently supported" -- so nothing here validates a value
+ * against a list. `app` carries application capabilities and stays opaque.
+ */
+export interface NodeAttrEntry {
+  target: string[];
+  attr: string[];
+  /** Application capabilities, passed through untouched. */
+  app?: Record<string, unknown>;
+  raw?: Record<string, unknown>;
+}
+
+/**
+ * A `grant` (Headscale >= 0.29): the successor to an ACL rule, able to carry
+ * application capabilities as well as ports.
+ *
+ * `src` and `dst` are required, but the capability may be either `ip` or `app`
+ * ("Optional if `app` provided" -- Tailscale's grants reference), so an absent
+ * `ip` must stay absent on the way out. `app` parameters are opaque: Tailscale
+ * "treats application capability parameters as opaque JSON objects", so they are
+ * carried verbatim rather than interpreted.
+ */
+export interface GrantEntry {
+  src: string[];
+  dst: string[];
+  ip: string[];
+  /** Routing through a tagged subnet router / exit node. */
+  via: string[];
+  app?: Record<string, unknown>;
+  raw?: Record<string, unknown>;
+}
+
 /** The editable, known surface of a policy document. */
 export interface PolicyModel {
   groups: NamedList[];
@@ -63,6 +100,8 @@ export interface PolicyModel {
   hosts: HostEntry[];
   acls: AclRule[];
   ssh: SshRule[];
+  nodeAttrs: NodeAttrEntry[];
+  grants: GrantEntry[];
   autoApprovers: AutoApprovers;
 }
 
@@ -86,6 +125,8 @@ export function emptyModel(): PolicyModel {
     hosts: [],
     acls: [],
     ssh: [],
+    nodeAttrs: [],
+    grants: [],
     autoApprovers: { routes: [], exitNode: [] },
   };
 }
@@ -140,6 +181,28 @@ function parseSsh(value: unknown): SshRule[] {
   }));
 }
 
+function parseNodeAttrs(value: unknown): NodeAttrEntry[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isObject).map((entry) => ({
+    target: toStringArray(entry.target),
+    attr: toStringArray(entry.attr),
+    ...(isObject(entry.app) ? { app: entry.app } : {}),
+    raw: entry,
+  }));
+}
+
+function parseGrants(value: unknown): GrantEntry[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isObject).map((entry) => ({
+    src: toStringArray(entry.src),
+    dst: toStringArray(entry.dst),
+    ip: toStringArray(entry.ip),
+    via: toStringArray(entry.via),
+    ...(isObject(entry.app) ? { app: entry.app } : {}),
+    raw: entry,
+  }));
+}
+
 function parseAutoApprovers(value: unknown): AutoApprovers {
   if (!isObject(value)) return { routes: [], exitNode: [] };
   return {
@@ -181,6 +244,8 @@ export function parsePolicy(source: string): ParsedPolicy {
     hosts: parseHosts(parsed.hosts),
     acls: parseAcls(parsed.acls),
     ssh: parseSsh(parsed.ssh),
+    nodeAttrs: parseNodeAttrs(parsed.nodeAttrs),
+    grants: parseGrants(parsed.grants),
     autoApprovers: parseAutoApprovers(parsed.autoApprovers),
   };
 
@@ -226,6 +291,36 @@ function serializeSsh(rule: SshRule): Record<string, unknown> {
 }
 
 /**
+ * `target` is mandatory, so it is always written; `attr` goes through {@link emit}
+ * because an entry may carry only `app`. `app` itself rides through on `raw` and
+ * is only written when a caller supplied one on a brand-new entry.
+ */
+function serializeNodeAttr(entry: NodeAttrEntry): Record<string, unknown> {
+  const raw = entry.raw ?? {};
+  const out: Record<string, unknown> = { ...raw };
+  out.target = [...entry.target];
+  emit(out, raw, "attr", [...entry.attr]);
+  if (entry.app && !("app" in raw)) out.app = entry.app;
+  return out;
+}
+
+/**
+ * `ip` and `via` go through {@link emit}: a grant whose capability is `app` has no
+ * `ip` key, and writing an empty one back would change a document the operator
+ * reviews as a diff. `src` / `dst` are required and always written.
+ */
+function serializeGrant(entry: GrantEntry): Record<string, unknown> {
+  const raw = entry.raw ?? {};
+  const out: Record<string, unknown> = { ...raw };
+  out.src = [...entry.src];
+  out.dst = [...entry.dst];
+  emit(out, raw, "ip", [...entry.ip]);
+  emit(out, raw, "via", [...entry.via]);
+  if (entry.app && !("app" in raw)) out.app = entry.app;
+  return out;
+}
+
+/**
  * Assign `built` onto `out[key]` when it has content, or when the key already
  * existed in `source` (so a section the user emptied stays present rather than
  * vanishing). Otherwise drop it. Reassigning an existing key preserves its
@@ -264,6 +359,8 @@ export function serializePolicy(
   emit(out, root, "hosts", buildHostRecord(model.hosts));
   emit(out, root, "acls", model.acls.map(serializeAcl));
   emit(out, root, "ssh", model.ssh.map(serializeSsh));
+  emit(out, root, "nodeAttrs", model.nodeAttrs.map(serializeNodeAttr));
+  emit(out, root, "grants", model.grants.map(serializeGrant));
 
   // autoApprovers is nested: clone its raw form to keep any unknown sub-keys,
   // then overlay the two known shapes.
