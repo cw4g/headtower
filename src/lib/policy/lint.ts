@@ -76,6 +76,16 @@ function collectRefSites(model: PolicyModel): RefSite[] {
     sites.push({ location: `ssh[${i}].dst`, tokens: rule.dst, isDst: true });
     sites.push({ location: `ssh[${i}].users`, tokens: rule.users });
   });
+  model.grants.forEach((grant, i) => {
+    sites.push({ location: `grants[${i}].src`, tokens: grant.src });
+    // Peeled like an acl dst so a stray port spec does not also masquerade as an
+    // undeclared tag; the port itself is reported by its own check below.
+    sites.push({ location: `grants[${i}].dst`, tokens: grant.dst, isDst: true });
+    sites.push({ location: `grants[${i}].via`, tokens: grant.via });
+  });
+  model.nodeAttrs.forEach((entry, i) => {
+    sites.push({ location: `nodeAttrs[${i}].target`, tokens: entry.target });
+  });
   model.tagOwners.forEach((tag, i) => {
     sites.push({ location: `tagOwners[${i}].owners`, tokens: tag.values });
   });
@@ -162,6 +172,39 @@ export function lintPolicy(
       }
     }
   }
+
+  // --- Grants: the shape an ACL habit gets wrong ---------------------------
+  model.grants.forEach((grant, i) => {
+    const location = `grants[${i}].dst`;
+    for (const token of grant.dst) {
+      const { host, ports } = splitDstPorts(token);
+      if (ports === null) continue;
+      // Tailscale's ACL-to-grant migration reference: "Port specification moves
+      // to IP field", turning dst ["tag:database:*"] into dst ["tag:database"]
+      // plus ip ["*"]. A port on a grant's destination is an acl habit.
+      findings.push({
+        id: `grant-dst-ports:${location}:${token}`,
+        severity: "warn",
+        code: "grant-dst-ports",
+        message: `"${token}" carries a port spec. In a grant the ports move to the ip field: dst ["${host}"] with ip ["${ports}"].`,
+        location,
+        token,
+      });
+    }
+
+    // src and dst are required, but the capability may be either ip or app
+    // ("Optional if `app` provided"). With neither, the grant does nothing.
+    if (grant.ip.length === 0 && !grant.app) {
+      findings.push({
+        id: `grant-no-capability:grants[${i}]`,
+        severity: "warn",
+        code: "grant-no-capability",
+        message:
+          "This grant carries neither ports (ip) nor an application capability (app), so it grants nothing.",
+        location: `grants[${i}]`,
+      });
+    }
+  });
 
   // --- Duplicate definitions ---------------------------------------------
   findings.push(...duplicateFindings(model.groups.map((g) => g.name), "groups", "group"));

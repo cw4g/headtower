@@ -56,3 +56,81 @@ test("the check is skipped when no user list is supplied", () => {
   );
   assert.deepEqual(findings, []);
 });
+
+// --- grants -----------------------------------------------------------------
+
+const lintGrant = (grant: Record<string, unknown>, code: string) =>
+  lintPolicy(
+    parsePolicy(JSON.stringify({ tagOwners: { "tag:db": ["a@"] }, grants: [grant] })).model,
+    {},
+  ).filter((f) => f.code === code);
+
+/**
+ * Tailscale's migration reference: "Port specification moves to IP field", so
+ * dst ["tag:database:*"] becomes dst ["tag:database"] with ip ["*"].
+ */
+test("a port spec on a grant destination is flagged", () => {
+  const findings = lintGrant(
+    { src: ["a@"], dst: ["tag:db:5432"], ip: ["tcp:5432"] },
+    "grant-dst-ports",
+  );
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].location, "grants[0].dst");
+  assert.match(findings[0].message, /ports move to the ip field/);
+  assert.match(findings[0].message, /dst \["tag:db"\] with ip \["5432"\]/);
+});
+
+test("the acl-style *:* destination is flagged too", () => {
+  const findings = lintGrant({ src: ["a@"], dst: ["*:*"], ip: ["*"] }, "grant-dst-ports");
+  assert.equal(findings.length, 1);
+  assert.match(findings[0].message, /dst \["\*"\] with ip \["\*"\]/);
+});
+
+test("a clean grant destination is not flagged", () => {
+  assert.deepEqual(
+    lintGrant({ src: ["a@"], dst: ["tag:db"], ip: ["tcp:5432"] }, "grant-dst-ports"),
+    [],
+  );
+});
+
+/** `svc:` and `tag:` contain a colon without carrying a port. */
+test("a service or tag destination is not mistaken for a port spec", () => {
+  assert.deepEqual(
+    lintGrant({ src: ["a@"], dst: ["svc:web-server"], ip: ["tcp:443"] }, "grant-dst-ports"),
+    [],
+  );
+});
+
+test("a grant with neither ip nor app is flagged as inert", () => {
+  const findings = lintGrant({ src: ["a@"], dst: ["tag:db"] }, "grant-no-capability");
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].location, "grants[0]");
+});
+
+test("an app-only grant is not flagged as inert", () => {
+  assert.deepEqual(
+    lintGrant(
+      { src: ["a@"], dst: ["tag:db"], app: { "example.com/cap/x": [{}] } },
+      "grant-no-capability",
+    ),
+    [],
+  );
+});
+
+test("references inside grants and nodeAttrs are checked", () => {
+  const model = parsePolicy(
+    JSON.stringify({
+      grants: [{ src: ["group:ghost"], dst: ["tag:db"], ip: ["*"] }],
+      nodeAttrs: [{ target: ["tag:phantom"], attr: ["drive:share"] }],
+    }),
+  ).model;
+  const codes = lintPolicy(model, {}).map((f) => `${f.code}@${f.location}`);
+  assert.ok(
+    codes.includes("undeclared-group@grants[0].src"),
+    `expected an undeclared group in grants, got ${codes.join(", ")}`,
+  );
+  assert.ok(
+    codes.includes("undeclared-tag@nodeAttrs[0].target"),
+    `expected an undeclared tag in nodeAttrs, got ${codes.join(", ")}`,
+  );
+});
