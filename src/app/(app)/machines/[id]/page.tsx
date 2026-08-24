@@ -639,12 +639,23 @@ function RoutesCard({ view, node }: { view: NodeView; node: Node }) {
           <Chip variant={exitState.variant}>{exitState.label}</Chip>
         </div>
 
-        <RouteGroup
-          icon={Network}
-          label="Subnet routes served"
-          routes={view.subnetRoutes}
-          empty="None served."
-        />
+        {/* Headscale reports served routes only on the node LIST endpoint, so here
+            `subnetRoutes` is empty even for a working subnet router. Falling back
+            to the approved set keeps the statement true instead of claiming none. */}
+        {view.subnetRoutes.length > 0 ? (
+          <RouteGroup
+            icon={Network}
+            label="Subnet routes served"
+            routes={view.subnetRoutes}
+          />
+        ) : (
+          <RouteGroup
+            icon={Network}
+            label="Subnet routes approved"
+            routes={view.approvedSubnets}
+            empty="None."
+          />
+        )}
 
         {view.pendingRoutes.length > 0 && (
           <RouteGroup
