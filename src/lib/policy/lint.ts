@@ -284,6 +284,60 @@ export function lintPolicy(
     }
   });
 
+  // --- Taildrive: attribute and grant must line up -------------------------
+  const coverage: CoverageContext = {
+    groups: new Map(
+      model.groups.map((g) => [g.name, g.values.map((v) => v.toLowerCase())]),
+    ),
+    hostAliases,
+  };
+  const shareTargets = attrTargets(model, "drive:share");
+  const accessTargets = attrTargets(model, "drive:access");
+  const driveGrants = model.grants.filter(
+    (g) => g.app !== undefined && DRIVE_CAP in g.app,
+  );
+
+  model.grants.forEach((grant, i) => {
+    if (grant.app === undefined || !(DRIVE_CAP in grant.app)) return;
+
+    if (provablyUncovered(grant.dst, shareTargets, coverage)) {
+      findings.push({
+        id: `drive-share-missing:grants[${i}].dst`,
+        severity: "warn",
+        code: "drive-share-missing",
+        message: `Taildrive grant without effect: nothing under nodeAttrs gives its destination the "drive:share" attribute.`,
+        location: `grants[${i}].dst`,
+      });
+    }
+
+    if (provablyUncovered(grant.src, accessTargets, coverage)) {
+      findings.push({
+        id: `drive-access-missing:grants[${i}].src`,
+        severity: "warn",
+        code: "drive-access-missing",
+        message: `Taildrive grant without effect: nothing under nodeAttrs gives its source the "drive:access" attribute.`,
+        location: `grants[${i}].src`,
+      });
+    }
+  });
+
+  // The mirror image: an attribute set without any grant to act on.
+  if (driveGrants.length === 0) {
+    model.nodeAttrs.forEach((entry, i) => {
+      for (const attr of entry.attr) {
+        if (attr !== "drive:share" && attr !== "drive:access") continue;
+        findings.push({
+          id: `drive-attr-unused:nodeAttrs[${i}]:${attr}`,
+          severity: "warn",
+          code: "drive-attr-unused",
+          message: `"${attr}" has no effect: no grant carries the ${DRIVE_CAP} capability.`,
+          location: `nodeAttrs[${i}].attr`,
+          token: attr,
+        });
+      }
+    });
+  }
+
   // --- Duplicate definitions ---------------------------------------------
   findings.push(...duplicateFindings(model.groups.map((g) => g.name), "groups", "group"));
   findings.push(
@@ -301,6 +355,127 @@ export function lintPolicy(
   );
 
   return findings;
+}
+
+/* ---------------------------------------------------------------------------
+ * Taildrive: the two halves have to line up
+ *
+ * Tailscale requires both an attribute and a grant -- `drive:share` on the node
+ * that exports, `drive:access` on the node that consumes, plus a grant carrying
+ * `tailscale.com/cap/drive`. Set one without the other and nothing happens, with
+ * no error anywhere. That silence is what makes it worth linting.
+ *
+ * The difficulty is that the two halves rarely name the same token: a grant may
+ * say `group:user` while the attribute says `autogroup:member`. So this reasons
+ * about COVERAGE, and answers "unknown" wherever it cannot decide -- a finding is
+ * only emitted when every token is provably uncovered.
+ * ------------------------------------------------------------------------- */
+
+const DRIVE_CAP = "tailscale.com/cap/drive";
+
+/** Whether a selector is covered by a set of targets, or undecidable. */
+type Coverage = "covered" | "uncovered" | "unknown";
+
+interface CoverageContext {
+  /** Declared group -> its members, lowercased. */
+  groups: Map<string, string[]>;
+  hostAliases: Set<string>;
+}
+
+/** Is `token` a group made up purely of users (so `autogroup:member` covers it)? */
+function isUserGroup(token: string, ctx: CoverageContext): Coverage {
+  const members = ctx.groups.get(token);
+  if (members === undefined) return "unknown"; // undeclared: cannot tell
+  if (members.length === 0) return "unknown";
+  const allUsers = members.every(
+    (m) => classifyToken(m, ctx.hostAliases) === "user",
+  );
+  return allUsers ? "covered" : "unknown";
+}
+
+/** Does a single `target` cover `token`? */
+function targetCovers(token: string, target: string, ctx: CoverageContext): Coverage {
+  if (target === token) return "covered";
+  if (target === "*") return "covered";
+
+  const tokenKind = classifyToken(token, ctx.hostAliases);
+
+  if (target === "autogroup:member") {
+    // Documented: autogroup:member is "any user who is a direct member" and a
+    // tagged device is explicitly a different autogroup, so a tag is NOT covered.
+    if (tokenKind === "user") return "covered";
+    if (tokenKind === "group") return isUserGroup(token, ctx);
+    if (tokenKind === "tag") return "uncovered";
+    return "unknown";
+  }
+
+  if (target === "autogroup:tagged") {
+    if (tokenKind === "tag") return "covered";
+    if (tokenKind === "user" || tokenKind === "group") return "uncovered";
+    return "unknown";
+  }
+
+  if (target.startsWith("group:")) {
+    const members = ctx.groups.get(target);
+    if (members === undefined) return "unknown";
+    if (tokenKind === "user") {
+      const needle = token.toLowerCase();
+      const bare = needle.endsWith("@") ? needle.slice(0, -1) : needle;
+      const hit = members.some((m) => {
+        const mm = m.toLowerCase();
+        return mm === needle || (mm.endsWith("@") ? mm.slice(0, -1) : mm) === bare;
+      });
+      return hit ? "covered" : "uncovered";
+    }
+    // Groups cannot nest, so another group is never inside this one.
+    if (tokenKind === "group") return "uncovered";
+    return "unknown";
+  }
+
+  if (target.startsWith("tag:")) {
+    return tokenKind === "tag" ? "uncovered" : "unknown";
+  }
+
+  return "unknown";
+}
+
+/** Coverage of `token` by any of `targets`: covered wins, then unknown. */
+function coveredByAny(
+  token: string,
+  targets: string[],
+  ctx: CoverageContext,
+): Coverage {
+  let sawUnknown = false;
+  for (const target of targets) {
+    const verdict = targetCovers(token, target, ctx);
+    if (verdict === "covered") return "covered";
+    if (verdict === "unknown") sawUnknown = true;
+  }
+  return sawUnknown ? "unknown" : "uncovered";
+}
+
+/** Every target of every nodeAttrs entry carrying `attr`. */
+function attrTargets(model: PolicyModel, attr: string): string[] {
+  const out: string[] = [];
+  for (const entry of model.nodeAttrs) {
+    if (entry.attr.includes(attr)) out.push(...entry.target);
+  }
+  return out;
+}
+
+/**
+ * True only when NO token of the list is covered and none is undecidable -- i.e.
+ * the whole side is provably without the attribute. Anything less stays quiet.
+ */
+function provablyUncovered(
+  tokens: string[],
+  targets: string[],
+  ctx: CoverageContext,
+): boolean {
+  if (tokens.length === 0) return false;
+  return tokens.every(
+    (token) => coveredByAny(token, targets, ctx) === "uncovered",
+  );
 }
 
 /** Emit a `duplicate-*` finding for each repeat name in a definition list. */

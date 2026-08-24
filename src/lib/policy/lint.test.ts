@@ -214,6 +214,155 @@ test("autogroup:member and autogroup:tagged are never flagged", () => {
   );
 });
 
+// --- Taildrive: the two halves must line up ---------------------------------
+
+const DRIVE = { "tailscale.com/cap/drive": [{ shares: ["*"], access: "rw" }] };
+
+/**
+ * The shape of the real policy this was built for: the grant names groups, the
+ * attribute names autogroup:member. Different tokens, same set -- a naive
+ * comparison would flag a correct policy, which is the failure mode to avoid.
+ */
+test("a group source is covered by an autogroup:member attribute", () => {
+  const findings = lintDoc({
+    hosts: { fileserver: "100.64.0.10/32" },
+    nodeAttrs: [
+      { target: ["fileserver"], attr: ["drive:share"] },
+      { target: ["autogroup:member"], attr: ["drive:access"] },
+    ],
+    grants: [{ src: ["group:user"], dst: ["fileserver"], app: DRIVE }],
+    groups: { "group:user": ["a@"] },
+  }).filter((f) => f.code.startsWith("drive-"));
+  assert.deepEqual(findings, []);
+});
+
+test("a missing drive:share on the destination is flagged", () => {
+  const findings = lintDoc(
+    {
+      hosts: { fileserver: "100.64.0.10/32" },
+      nodeAttrs: [{ target: ["autogroup:member"], attr: ["drive:access"] }],
+      grants: [{ src: ["group:user"], dst: ["fileserver"], app: DRIVE }],
+      groups: { "group:user": ["a@"] },
+    },
+    "drive-share-missing",
+  );
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].location, "grants[0].dst");
+});
+
+test("a missing drive:access on the source is flagged", () => {
+  const findings = lintDoc(
+    {
+      hosts: { fileserver: "100.64.0.10/32" },
+      nodeAttrs: [{ target: ["fileserver"], attr: ["drive:share"] }],
+      grants: [{ src: ["group:user"], dst: ["fileserver"], app: DRIVE }],
+      groups: { "group:user": ["a@"] },
+    },
+    "drive-access-missing",
+  );
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].location, "grants[0].src");
+});
+
+/** A tagged device is not a member -- that one IS decidable, so it is flagged. */
+test("a tag source is not covered by autogroup:member", () => {
+  const findings = lintDoc(
+    {
+      hosts: { fileserver: "100.64.0.10/32" },
+      nodeAttrs: [
+        { target: ["fileserver"], attr: ["drive:share"] },
+        { target: ["autogroup:member"], attr: ["drive:access"] },
+      ],
+      grants: [{ src: ["tag:scanner"], dst: ["fileserver"], app: DRIVE }],
+      tagOwners: { "tag:scanner": ["a@"] },
+    },
+    "drive-access-missing",
+  );
+  assert.equal(findings.length, 1);
+});
+
+test("a wildcard attribute target covers everything", () => {
+  const findings = lintDoc({
+    hosts: { fileserver: "100.64.0.10/32" },
+    nodeAttrs: [
+      { target: ["fileserver"], attr: ["drive:share"] },
+      { target: ["*"], attr: ["drive:access"] },
+    ],
+    grants: [{ src: ["tag:scanner"], dst: ["fileserver"], app: DRIVE }],
+    tagOwners: { "tag:scanner": ["a@"] },
+  }).filter((f) => f.code.startsWith("drive-"));
+  assert.deepEqual(findings, []);
+});
+
+/** An undeclared group is undecidable, so the rule must stay silent. */
+test("an undecidable source is not flagged", () => {
+  const findings = lintDoc({
+    hosts: { fileserver: "100.64.0.10/32" },
+    nodeAttrs: [
+      { target: ["fileserver"], attr: ["drive:share"] },
+      { target: ["group:ghost"], attr: ["drive:access"] },
+    ],
+    grants: [{ src: ["group:user"], dst: ["fileserver"], app: DRIVE }],
+    groups: { "group:user": ["a@"] },
+  }).filter((f) => f.code.startsWith("drive-"));
+  assert.deepEqual(findings, []);
+});
+
+test("a user listed in the attribute's group is covered", () => {
+  const findings = lintDoc({
+    hosts: { fileserver: "100.64.0.10/32" },
+    nodeAttrs: [
+      { target: ["fileserver"], attr: ["drive:share"] },
+      { target: ["group:user"], attr: ["drive:access"] },
+    ],
+    grants: [{ src: ["alice@"], dst: ["fileserver"], app: DRIVE }],
+    groups: { "group:user": ["alice@"] },
+  }).filter((f) => f.code.startsWith("drive-"));
+  assert.deepEqual(findings, []);
+});
+
+test("a user absent from the attribute's group is flagged", () => {
+  const findings = lintDoc(
+    {
+      hosts: { fileserver: "100.64.0.10/32" },
+      nodeAttrs: [
+        { target: ["fileserver"], attr: ["drive:share"] },
+        { target: ["group:user"], attr: ["drive:access"] },
+      ],
+      grants: [{ src: ["mallory@"], dst: ["fileserver"], app: DRIVE }],
+      groups: { "group:user": ["alice@"] },
+    },
+    "drive-access-missing",
+  );
+  assert.equal(findings.length, 1);
+});
+
+test("drive attributes without any drive grant are flagged", () => {
+  const findings = lintDoc(
+    {
+      hosts: { fileserver: "100.64.0.10/32" },
+      nodeAttrs: [
+        { target: ["fileserver"], attr: ["drive:share"] },
+        { target: ["autogroup:member"], attr: ["drive:access"] },
+      ],
+      grants: [{ src: ["a@"], dst: ["fileserver"], ip: ["*"] }],
+    },
+    "drive-attr-unused",
+  );
+  assert.equal(findings.length, 2);
+  assert.match(findings[0].message, /no grant carries the tailscale\.com\/cap\/drive/);
+});
+
+test("a non-drive capability is left alone", () => {
+  const findings = lintDoc({
+    grants: [
+      { src: ["a@"], dst: ["tag:db"], app: { "example.com/cap/x": [{}] } },
+    ],
+    tagOwners: { "tag:db": ["a@"] },
+  }).filter((f) => f.code.startsWith("drive-"));
+  assert.deepEqual(findings, []);
+});
+
 test("references inside grants and nodeAttrs are checked", () => {
   const model = parsePolicy(
     JSON.stringify({
