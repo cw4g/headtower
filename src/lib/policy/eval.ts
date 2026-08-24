@@ -9,8 +9,8 @@
  *
  * It is deliberately honest about its limits: constructs it can't fully reason
  * about (most `autogroup:*` forms, `autogroup:internet` against a concrete IP,
- * IPv6 ranges, a `proto` narrower than the question) are reported as `notes`
- * rather than guessed. Isomorphic and dependency-free.
+ * IPv6 ranges, a `proto` narrower than the question, and `grants` entirely) are
+ * reported as `notes` rather than guessed. Isomorphic and dependency-free.
  */
 
 import type { AclRule, PolicyModel } from "./model";
@@ -219,6 +219,16 @@ export function evaluateReachability(
       match: null,
       notes: ["Pick both a source and a destination to evaluate."],
     };
+  }
+
+  // Grants are not evaluated, and that matters more than it sounds: a policy
+  // migrated fully to grants has an empty `acls`, so every question would answer
+  // "deny" without a word about why. Saying so beats being confidently wrong.
+  if (model.grants.length > 0) {
+    const n = model.grants.length;
+    notes.add(
+      `${n} grant${n === 1 ? "" : "s"} not evaluated: this reads acls only, so access permitted solely by a grant is reported as deny.`,
+    );
   }
 
   const wantedProto = normalizeProto(query.protocol ?? null);
