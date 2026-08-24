@@ -652,7 +652,7 @@ function RoutesCard({ view, node }: { view: NodeView; node: Node }) {
           <RouteGroup
             icon={Network}
             label="Subnet routes approved"
-            routes={view.approvedSubnets}
+            routes={view.enabledRoutes}
             empty="None."
           />
         )}
@@ -662,6 +662,18 @@ function RoutesCard({ view, node }: { view: NodeView; node: Node }) {
             icon={Network}
             label="Advertised, awaiting approval"
             routes={view.pendingRoutes}
+            variant="warn"
+          />
+        )}
+
+        {/* An approval the node no longer backs with an advertisement. Nothing is
+            served, but the authorisation stands: re-advertising the prefix would
+            put it into service unreviewed. */}
+        {view.staleApprovals.length > 0 && (
+          <RouteGroup
+            icon={Network}
+            label="Approved but no longer advertised"
+            routes={view.staleApprovals}
             variant="warn"
           />
         )}

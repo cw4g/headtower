@@ -83,16 +83,22 @@ export interface NodeView {
   /**
    * Subnet routes Headscale reports as actually served, excluding the default
    * route. Empty on a single-node read even when the node serves routes -- see
-   * {@link NodeView.approvedSubnets}.
+   * {@link NodeView.enabledRoutes}.
    */
   subnetRoutes: string[];
   /**
-   * Approved subnet routes, excluding the default route. Reported consistently by
-   * both node endpoints, so this is what to show when `subnetRoutes` is empty:
-   * whether a route is currently *served* additionally depends on this node being
-   * the primary router for the prefix.
+   * Subnet routes both advertised and approved, excluding the default route: the
+   * set that can carry traffic (whether it currently does also depends on this
+   * node being the primary router for the prefix). Derived from two fields both
+   * node endpoints fill, so it is usable where `subnetRoutes` is not.
    */
-  approvedSubnets: string[];
+  enabledRoutes: string[];
+  /**
+   * Approvals with nothing behind them: approved, but the node no longer advertises
+   * the prefix. Harmless today, yet a standing authorisation -- re-advertising the
+   * prefix would put it into service without any further review.
+   */
+  staleApprovals: string[];
   /** Routes advertised by the node but not yet approved. */
   pendingRoutes: string[];
   /** Agent-sourced device facts (OS, client version, endpoints), or null. */
@@ -235,7 +241,12 @@ export function toNodeView(
     subnet.some(isDefaultRoute) || (exitAdvertised && exitApproved);
   const advertisesExit = !isExitNode && exitAdvertised;
   const subnetRoutes = subnet.filter((r) => !isDefaultRoute(r)).sort();
-  const approvedSubnets = approved.filter((r) => !isDefaultRoute(r)).sort();
+  const enabledRoutes = available
+    .filter((r) => approved.includes(r) && !isDefaultRoute(r))
+    .sort();
+  const staleApprovals = approved
+    .filter((r) => !available.includes(r) && !isDefaultRoute(r))
+    .sort();
   const pendingRoutes = available
     .filter((r) => !approved.includes(r) && !isDefaultRoute(r))
     .sort();
@@ -265,7 +276,8 @@ export function toNodeView(
     isExitNode,
     advertisesExit,
     subnetRoutes,
-    approvedSubnets,
+    enabledRoutes,
+    staleApprovals,
     pendingRoutes,
     agent: agent
       ? {

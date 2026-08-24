@@ -108,37 +108,65 @@ test("an approved route that is not served shows as approved, not pending", () =
 
 /**
  * `GET /v1/node/{id}` omits `subnetRoutes`, so a detail page that trusted it
- * announced "none served" for a node that was serving the route. The approved set
- * is the honest fallback.
+ * announced "none served" for a node that was serving the route. `enabledRoutes`
+ * is built from two fields both endpoints fill.
  */
-test("approved subnets are reported even when subnetRoutes is empty", () => {
+test("enabled routes are reported even when subnetRoutes is empty", () => {
   const view = viewOf({
     availableRoutes: ["0.0.0.0/0", "::/0", "10.0.2.0/24"],
     approvedRoutes: ["0.0.0.0/0", "::/0", "10.0.2.0/24"],
     subnetRoutes: [],
   });
   assert.deepEqual(view.subnetRoutes, [], "nothing reported as served");
-  assert.deepEqual(view.approvedSubnets, ["10.0.2.0/24"], "but it is approved");
+  assert.deepEqual(view.enabledRoutes, ["10.0.2.0/24"], "but it is live-capable");
+  assert.deepEqual(view.staleApprovals, []);
 });
 
-test("approvedSubnets excludes the default routes", () => {
+test("enabledRoutes excludes the default routes", () => {
   const view = viewOf({
     availableRoutes: ["0.0.0.0/0", "::/0"],
     approvedRoutes: ["0.0.0.0/0", "::/0"],
     subnetRoutes: [],
   });
-  assert.deepEqual(view.approvedSubnets, []);
+  assert.deepEqual(view.enabledRoutes, []);
   assert.equal(view.isExitNode, true, "the default routes belong to the exit flag");
 });
 
-test("approvedSubnets is sorted and holds only approved prefixes", () => {
+/**
+ * An approval the node no longer backs with an advertisement. It serves nothing,
+ * but it is a standing authorisation, so it deserves its own line rather than
+ * hiding among the live routes.
+ */
+test("an approval without an advertisement is reported as stale", () => {
+  const view = viewOf({
+    availableRoutes: ["192.168.182.0/24"],
+    approvedRoutes: ["192.168.182.0/24", "10.182.0.0/16"],
+    subnetRoutes: [],
+  });
+  assert.deepEqual(view.enabledRoutes, ["192.168.182.0/24"]);
+  assert.deepEqual(view.staleApprovals, ["10.182.0.0/16"]);
+  assert.deepEqual(view.pendingRoutes, [], "nothing awaits approval");
+});
+
+test("an advertised but unapproved route is pending, not stale", () => {
   const view = viewOf({
     availableRoutes: ["192.168.5.0/24", "10.0.2.0/24"],
     approvedRoutes: ["192.168.5.0/24"],
     subnetRoutes: [],
   });
-  assert.deepEqual(view.approvedSubnets, ["192.168.5.0/24"]);
+  assert.deepEqual(view.enabledRoutes, ["192.168.5.0/24"]);
   assert.deepEqual(view.pendingRoutes, ["10.0.2.0/24"]);
+  assert.deepEqual(view.staleApprovals, []);
+});
+
+test("a stale default-route approval is not listed as a stale subnet", () => {
+  const view = viewOf({
+    availableRoutes: [],
+    approvedRoutes: ["0.0.0.0/0", "::/0"],
+    subnetRoutes: [],
+  });
+  assert.deepEqual(view.staleApprovals, [], "the exit flag covers those");
+  assert.equal(view.isExitNode, false, "nothing advertised, so not an exit node");
 });
 
 test("an unapproved subnet route is pending", () => {
