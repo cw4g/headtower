@@ -254,7 +254,7 @@ function VerdictCard({
           <span className="text-ink-faint">
             Matched by{" "}
             <span className="data text-ink-muted">
-              acls[{result.match.ruleIndex}]
+              {result.match.section}[{result.match.ruleIndex}]
             </span>
           </span>
           <div className="flex flex-wrap items-center gap-1.5">
@@ -265,6 +265,12 @@ function VerdictCard({
             <Chip mono variant="default">
               {result.match.matchedDst}
             </Chip>
+            {/* a grant carries its ports separately, so name the entry that hit */}
+            {result.match.matchedIp && (
+              <Chip mono variant="outline">
+                ip {result.match.matchedIp}
+              </Chip>
+            )}
           </div>
         </div>
       ) : (

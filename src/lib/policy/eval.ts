@@ -2,15 +2,21 @@
  * A pure, honest reachability evaluator for the Headscale/Tailscale ACL model.
  *
  * Given a parsed policy and a single (source -> destination[:port]) question, it
- * decides ALLOW or DENY under standard ACL semantics: default-deny, with a match
- * requiring some `accept` rule whose `src` covers the source *and* whose `dst`
- * covers the destination and port. Membership is expanded (groups -> their users,
- * host aliases -> their CIDRs) and IPv4 CIDRs are matched by range overlap.
+ * decides ALLOW or DENY: default-deny, with a match requiring a rule whose `src`
+ * covers the source *and* whose `dst` covers the destination and port. Membership
+ * is expanded (groups -> their users, host aliases -> their CIDRs) and IPv4 CIDRs
+ * are matched by range overlap.
  *
- * It is deliberately honest about its limits: constructs it can't fully reason
- * about (most `autogroup:*` forms, `autogroup:internet` against a concrete IP,
- * IPv6 ranges, a `proto` narrower than the question, and `grants` entirely) are
- * reported as `notes` rather than guessed. Isomorphic and dependency-free.
+ * Both sections are evaluated, because Tailscale calls acls "legacy" and advises
+ * favouring grants: `acls`, where the ports are a suffix on each `dst` entry, and
+ * `grants`, where they live in a separate `ip` field. A grant that carries only an
+ * `app` capability grants no network reach and therefore cannot allow -- it is
+ * reported as a note instead, since it is a plausible reason for a surprising deny.
+ *
+ * It is deliberately honest about its remaining limits: constructs it can't fully
+ * reason about (most `autogroup:*` forms, `autogroup:internet` against a concrete
+ * IP, IPv6 ranges, a protocol narrower than the question) are reported as `notes`
+ * rather than guessed. Isomorphic and dependency-free.
  */
 
 import type { AclRule, PolicyModel } from "./model";
@@ -37,7 +43,9 @@ export interface EvalQuery {
 
 /** The rule (and specific entries) that produced an ALLOW. */
 export interface EvalMatch {
-  /** Index into `model.acls`. */
+  /** Which section the rule lives in. */
+  section: "acls" | "grants";
+  /** Index into `model[section]`. */
   ruleIndex: number;
   src: string[];
   dst: string[];
@@ -45,6 +53,8 @@ export interface EvalMatch {
   matchedSrc: string;
   /** The `dst` entry that covered the destination. */
   matchedDst: string;
+  /** For a grant: the `ip` entry that admitted the port/protocol. */
+  matchedIp?: string;
 }
 
 /** The outcome of {@link evaluateReachability}. */
@@ -202,6 +212,49 @@ function protoOk(rule: AclRule, wanted: string | null): boolean {
 }
 
 /**
+ * Split one `ip` entry of a grant into protocol and port spec.
+ *
+ * A grant writes the protocol FIRST (`tcp:443`, `udp:53`), the mirror image of an
+ * acl destination where the ports are a suffix. Tailscale's own migration guide
+ * turns `tag:server:80` into a bare `80`, so an entry without a protocol is a port
+ * spec -- except for a bare protocol name (`icmp`), which means any port.
+ */
+function splitIpEntry(entry: string): { proto: string | null; ports: string } {
+  const trimmed = entry.trim();
+  const idx = trimmed.indexOf(":");
+  if (idx === -1) {
+    // Anything starting with a digit or `*` is a port spec; the numeric protocol
+    // aliases ("6", "17") would otherwise swallow port 6.
+    if (!/^[\d*]/.test(trimmed) && PROTO_ALIASES[trimmed.toLowerCase()] !== undefined) {
+      return { proto: normalizeProto(trimmed), ports: "*" };
+    }
+    return { proto: null, ports: trimmed };
+  }
+  return {
+    proto: normalizeProto(trimmed.slice(0, idx)),
+    ports: trimmed.slice(idx + 1) || "*",
+  };
+}
+
+/**
+ * Does one `ip` entry admit the requested port and protocol? Mirrors {@link protoOk}:
+ * a question that asks for "any" protocol is satisfied by a narrower entry, and the
+ * caller notes the narrowing.
+ */
+function ipEntryAllows(
+  entry: string,
+  wantedPort: number | null,
+  wantedProto: string | null,
+): { ok: boolean; proto: string | null } {
+  const { proto, ports } = splitIpEntry(entry);
+  if (!portMatches(ports, wantedPort)) return { ok: false, proto };
+  if (proto !== null && wantedProto !== null && proto !== wantedProto) {
+    return { ok: false, proto };
+  }
+  return { ok: true, proto };
+}
+
+/**
  * Evaluate one reachability question against the policy. Default-deny: returns
  * `allow` with the first matching `accept` rule, else `deny`. Honest notes carry
  * any constructs that couldn't be fully evaluated.
@@ -219,16 +272,6 @@ export function evaluateReachability(
       match: null,
       notes: ["Pick both a source and a destination to evaluate."],
     };
-  }
-
-  // Grants are not evaluated, and that matters more than it sounds: a policy
-  // migrated fully to grants has an empty `acls`, so every question would answer
-  // "deny" without a word about why. Saying so beats being confidently wrong.
-  if (model.grants.length > 0) {
-    const n = model.grants.length;
-    notes.add(
-      `${n} grant${n === 1 ? "" : "s"} not evaluated: this reads acls only, so access permitted solely by a grant is reported as deny.`,
-    );
   }
 
   const wantedProto = normalizeProto(query.protocol ?? null);
@@ -267,6 +310,7 @@ export function evaluateReachability(
         return {
           decision: "allow",
           match: {
+            section: "acls",
             ruleIndex: i,
             src: rule.src,
             dst: rule.dst,
@@ -276,6 +320,71 @@ export function evaluateReachability(
           notes: [...notes],
         };
       }
+    }
+  }
+
+  // --- grants ---------------------------------------------------------------
+  for (let i = 0; i < model.grants.length; i++) {
+    const grant = model.grants[i];
+
+    let matchedSrc: string | null = null;
+    for (const entry of grant.src) {
+      const exp = expand(entry, model, hostAliases, notes, new Set());
+      if (covers(srcQuery, exp)) {
+        matchedSrc = entry;
+        break;
+      }
+    }
+    if (matchedSrc === null) continue;
+
+    // No port peeling here: a grant's ports belong in `ip`, and a stray suffix on
+    // the destination is a real mistake the linter reports rather than one to
+    // paper over.
+    let matchedDst: string | null = null;
+    for (const entry of grant.dst) {
+      const exp = expand(entry, model, hostAliases, notes, new Set());
+      if (covers(dstQuery, exp)) {
+        matchedDst = entry;
+        break;
+      }
+    }
+    if (matchedDst === null) continue;
+
+    // Both sides match; only the capability decides now. An `app` capability is
+    // not network reach, so it cannot allow -- but it is worth saying, because a
+    // matching-yet-denying grant is exactly what looks like a bug.
+    if (grant.ip.length === 0) {
+      const caps = grant.app ? Object.keys(grant.app) : [];
+      notes.add(
+        caps.length > 0
+          ? `grants[${i}] matches, but carries only the application capability ${caps.join(", ")} - that is not network reachability.`
+          : `grants[${i}] matches, but carries neither ports nor an application capability.`,
+      );
+      continue;
+    }
+
+    for (const entry of grant.ip) {
+      const { ok, proto } = ipEntryAllows(entry, wantedPort, wantedProto);
+      if (!ok) continue;
+      if (wantedProto === null && proto !== null) {
+        notes.add(`This grant applies only to proto ${proto}.`);
+      }
+      if (grant.via.length > 0) {
+        notes.add(`This grant routes via ${grant.via.join(", ")}.`);
+      }
+      return {
+        decision: "allow",
+        match: {
+          section: "grants",
+          ruleIndex: i,
+          src: grant.src,
+          dst: grant.dst,
+          matchedSrc,
+          matchedDst,
+          matchedIp: entry,
+        },
+        notes: [...notes],
+      };
     }
   }
 
