@@ -213,8 +213,16 @@ export function toNodeView(
   const available = node.availableRoutes ?? [];
   const subnet = node.subnetRoutes ?? [];
 
-  const isExitNode = subnet.some(isDefaultRoute);
-  const advertisesExit = !isExitNode && available.some(isDefaultRoute);
+  // An exit node counts as active once it both advertises and has an approved
+  // default route. Reading `subnetRoutes` alone is not enough: Headscale fills it
+  // differently for GET /v1/node and GET /v1/node/{id}, so one and the same node
+  // showed as "Active" in the list and as "Advertised, pending approval" on its
+  // own page. The approved set is reported consistently by both, so it decides.
+  const exitAdvertised = available.some(isDefaultRoute);
+  const exitApproved = approved.some(isDefaultRoute);
+  const isExitNode =
+    subnet.some(isDefaultRoute) || (exitAdvertised && exitApproved);
+  const advertisesExit = !isExitNode && exitAdvertised;
   const subnetRoutes = subnet.filter((r) => !isDefaultRoute(r)).sort();
   const pendingRoutes = available
     .filter((r) => !approved.includes(r) && !isDefaultRoute(r))
