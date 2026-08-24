@@ -117,6 +117,103 @@ test("an app-only grant is not flagged as inert", () => {
   );
 });
 
+// --- groups may not contain groups ------------------------------------------
+
+const lintDoc = (doc: Record<string, unknown>, code?: string) => {
+  const all = lintPolicy(parsePolicy(JSON.stringify(doc)).model, {});
+  return code ? all.filter((f) => f.code === code) : all;
+};
+
+/**
+ * Tailscale, verbatim: "To avoid the risk of obfuscating group membership, groups
+ * cannot contain other groups." The failure is quiet, which is what makes it worth
+ * linting: the nested name matches no user, so the group is simply empty.
+ */
+test("a group inside a group is flagged", () => {
+  const findings = lintDoc(
+    { groups: { "group:user": ["group:admin"], "group:admin": ["a@"] } },
+    "nested-group",
+  );
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].location, "groups[0].members");
+  assert.equal(findings[0].token, "group:admin");
+  assert.match(findings[0].message, /groups cannot contain other groups/);
+});
+
+test("a nested group is not also reported as undeclared", () => {
+  const codes = lintDoc({ groups: { "group:user": ["group:ghost"] } }).map((f) => f.code);
+  assert.deepEqual(codes, ["nested-group"], `got ${codes.join(", ")}`);
+});
+
+test("plain user members are not flagged", () => {
+  assert.deepEqual(lintDoc({ groups: { "group:user": ["a@", "b@"] } }, "nested-group"), []);
+});
+
+// --- autogroup placement ----------------------------------------------------
+
+test("autogroup:internet is rejected as a source", () => {
+  const findings = lintDoc(
+    { acls: [{ action: "accept", src: ["autogroup:internet"], dst: ["*:*"] }] },
+    "autogroup-placement",
+  );
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].location, "acls[0].src");
+  assert.match(findings[0].message, /only be used in policy destinations/);
+});
+
+test("autogroup:internet is accepted as a destination", () => {
+  assert.deepEqual(
+    lintDoc(
+      { grants: [{ src: ["a@"], dst: ["autogroup:internet"], ip: ["*"] }] },
+      "autogroup-placement",
+    ),
+    [],
+  );
+});
+
+test("autogroup:danger-all is rejected as a destination", () => {
+  const findings = lintDoc(
+    { grants: [{ src: ["a@"], dst: ["autogroup:danger-all"], ip: ["*"] }] },
+    "autogroup-placement",
+  );
+  assert.equal(findings.length, 1);
+  assert.match(findings[0].message, /only be used in sources/);
+});
+
+test("autogroup:nonroot is accepted in ssh users but not elsewhere", () => {
+  assert.deepEqual(
+    lintDoc(
+      {
+        ssh: [
+          { action: "check", src: ["a@"], dst: ["tag:x"], users: ["autogroup:nonroot"] },
+        ],
+      },
+      "autogroup-placement",
+    ),
+    [],
+  );
+  const misplaced = lintDoc(
+    { acls: [{ action: "accept", src: ["autogroup:nonroot"], dst: ["*:*"] }] },
+    "autogroup-placement",
+  );
+  assert.equal(misplaced.length, 1);
+  assert.match(misplaced[0].message, /users field of SSH rules/);
+});
+
+/** No documented restriction -> never flagged, wherever it appears. */
+test("autogroup:member and autogroup:tagged are never flagged", () => {
+  assert.deepEqual(
+    lintDoc(
+      {
+        grants: [{ src: ["autogroup:member"], dst: ["autogroup:tagged"], ip: ["*"] }],
+        nodeAttrs: [{ target: ["autogroup:member"], attr: ["drive:access"] }],
+      },
+      "autogroup-placement",
+    ),
+    [],
+  );
+});
+
 test("references inside grants and nodeAttrs are checked", () => {
   const model = parsePolicy(
     JSON.stringify({

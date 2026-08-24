@@ -55,52 +55,92 @@ function matchesKnownUser(token: string, knownUsers: Set<string>): boolean {
   return needle.endsWith("@") && knownUsers.has(needle.slice(0, -1));
 }
 
+/**
+ * Where a reference sits. Several autogroups are only valid in one position --
+ * Headscale documents `autogroup:internet` as "Can only be used in policy
+ * destinations", `autogroup:danger-all` as "Can only be used as source" -- so the
+ * position has to travel with the tokens.
+ */
+type SitePosition = "src" | "dst" | "ssh-users" | "group-members" | "other";
+
 /** A reference site to scan: its tokens and the location label for findings. */
 interface RefSite {
   location: string;
   tokens: string[];
-  /** dst sites carry a trailing port spec that must be peeled before checks. */
-  isDst?: boolean;
+  position: SitePosition;
 }
+
+/**
+ * Autogroups whose placement Headscale restricts, with the wording it uses. An
+ * autogroup that is absent here carries no documented restriction (e.g.
+ * `autogroup:member`, `autogroup:tagged`) and is therefore never flagged.
+ */
+const AUTOGROUP_PLACEMENT: Record<string, { allowed: SitePosition[]; where: string }> = {
+  "autogroup:internet": { allowed: ["dst"], where: "policy destinations" },
+  "autogroup:self": { allowed: ["dst"], where: "policy destinations" },
+  "autogroup:danger-all": { allowed: ["src"], where: "sources" },
+  "autogroup:nonroot": {
+    allowed: ["ssh-users"],
+    where: "the users field of SSH rules",
+  },
+};
 
 /** Collect every reference site in the model, each with its location label. */
 function collectRefSites(model: PolicyModel): RefSite[] {
   const sites: RefSite[] = [];
 
   model.acls.forEach((rule, i) => {
-    sites.push({ location: `acls[${i}].src`, tokens: rule.src });
-    sites.push({ location: `acls[${i}].dst`, tokens: rule.dst, isDst: true });
+    sites.push({ location: `acls[${i}].src`, tokens: rule.src, position: "src" });
+    sites.push({ location: `acls[${i}].dst`, tokens: rule.dst, position: "dst" });
   });
   model.ssh.forEach((rule, i) => {
-    sites.push({ location: `ssh[${i}].src`, tokens: rule.src });
-    sites.push({ location: `ssh[${i}].dst`, tokens: rule.dst, isDst: true });
-    sites.push({ location: `ssh[${i}].users`, tokens: rule.users });
+    sites.push({ location: `ssh[${i}].src`, tokens: rule.src, position: "src" });
+    sites.push({ location: `ssh[${i}].dst`, tokens: rule.dst, position: "dst" });
+    sites.push({
+      location: `ssh[${i}].users`,
+      tokens: rule.users,
+      position: "ssh-users",
+    });
   });
   model.grants.forEach((grant, i) => {
-    sites.push({ location: `grants[${i}].src`, tokens: grant.src });
-    // Peeled like an acl dst so a stray port spec does not also masquerade as an
-    // undeclared tag; the port itself is reported by its own check below.
-    sites.push({ location: `grants[${i}].dst`, tokens: grant.dst, isDst: true });
-    sites.push({ location: `grants[${i}].via`, tokens: grant.via });
+    sites.push({ location: `grants[${i}].src`, tokens: grant.src, position: "src" });
+    // Treated like an acl dst so a stray port spec is peeled and does not also
+    // masquerade as an undeclared tag; the port is reported by its own check.
+    sites.push({ location: `grants[${i}].dst`, tokens: grant.dst, position: "dst" });
+    sites.push({ location: `grants[${i}].via`, tokens: grant.via, position: "other" });
   });
   model.nodeAttrs.forEach((entry, i) => {
-    sites.push({ location: `nodeAttrs[${i}].target`, tokens: entry.target });
+    sites.push({
+      location: `nodeAttrs[${i}].target`,
+      tokens: entry.target,
+      position: "other",
+    });
   });
   model.tagOwners.forEach((tag, i) => {
-    sites.push({ location: `tagOwners[${i}].owners`, tokens: tag.values });
+    sites.push({
+      location: `tagOwners[${i}].owners`,
+      tokens: tag.values,
+      position: "other",
+    });
   });
   model.groups.forEach((group, i) => {
-    sites.push({ location: `groups[${i}].members`, tokens: group.values });
+    sites.push({
+      location: `groups[${i}].members`,
+      tokens: group.values,
+      position: "group-members",
+    });
   });
   model.autoApprovers.routes.forEach((route, i) => {
     sites.push({
       location: `autoApprovers.routes[${i}]`,
       tokens: route.values,
+      position: "other",
     });
   });
   sites.push({
     location: "autoApprovers.exitNode",
     tokens: model.autoApprovers.exitNode,
+    position: "other",
   });
 
   return sites;
@@ -138,9 +178,27 @@ export function lintPolicy(
   // --- Undeclared group:/tag: references, and unknown users ---------------
   for (const site of collectRefSites(model)) {
     for (const raw of site.tokens) {
-      const token = referencePart(raw, site.isDst ?? false);
+      const token = referencePart(raw, site.position === "dst");
       if (token === "") continue;
       const kind = classifyToken(token, hostAliases);
+
+      // An autogroup in the wrong position is invalid however well it is spelled.
+      const placement = AUTOGROUP_PLACEMENT[token];
+      if (placement && !placement.allowed.includes(site.position)) {
+        findings.push({
+          id: `autogroup-placement:${site.location}:${token}`,
+          severity: "warn",
+          code: "autogroup-placement",
+          message: `"${token}" can only be used in ${placement.where}.`,
+          location: site.location,
+          token,
+        });
+        continue;
+      }
+
+      // A group inside groups[].members is reported by its own rule below; the
+      // undeclared-group message would be misleading there.
+      if (site.position === "group-members" && kind === "group") continue;
 
       if (kind === "group" && !declaredGroups.has(token)) {
         findings.push({
@@ -172,6 +230,26 @@ export function lintPolicy(
       }
     }
   }
+
+  // --- Groups may not contain groups ---------------------------------------
+  model.groups.forEach((group, i) => {
+    const location = `groups[${i}].members`;
+    for (const token of group.values) {
+      if (!token.startsWith("group:")) continue;
+      // Tailscale, verbatim: "To avoid the risk of obfuscating group membership,
+      // groups cannot contain other groups." Headscale inherits the rule, and the
+      // failure is quiet -- the nested name resolves to no user, leaving the group
+      // empty and every rule that references it inert.
+      findings.push({
+        id: `nested-group:${location}:${token}`,
+        severity: "warn",
+        code: "nested-group",
+        message: `"${token}" is a group: groups cannot contain other groups. List the members directly.`,
+        location,
+        token,
+      });
+    }
+  });
 
   // --- Grants: the shape an ACL habit gets wrong ---------------------------
   model.grants.forEach((grant, i) => {
