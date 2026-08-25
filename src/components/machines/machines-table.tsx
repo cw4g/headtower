@@ -61,6 +61,7 @@ function edgeStatus(
 export function MachinesTable({
   nodes,
   canManage = false,
+  sshAvailable = true,
   knownTags,
   metadata,
 }: {
@@ -71,6 +72,14 @@ export function MachinesTable({
    * page, matching how the node detail page gates its own Actions card.
    */
   canManage?: boolean;
+  /**
+   * Whether browser SSH is configured at all (agent URL + shared secret).
+   * Computed server-side via `sshBridgeAvailable()` and passed down for the same
+   * reason as `canManage`: this is a client component and the check reads
+   * config. Without it a row offers a terminal link that can only end in a
+   * failed token mint.
+   */
+  sshAvailable?: boolean;
   /** Tailnet-wide tag suggestions for each row's Edit tags dialog. */
   knownTags?: string[];
   /**
@@ -229,6 +238,7 @@ export function MachinesTable({
                   key={node.id}
                   node={node}
                   canManage={canManage}
+                  sshAvailable={sshAvailable}
                   knownTags={knownTags}
                   metadata={metadata?.[node.id]}
                   selected={selected.has(node.id)}
@@ -255,6 +265,7 @@ export function MachinesTable({
 function MachineRow({
   node,
   canManage,
+  sshAvailable,
   knownTags,
   metadata,
   selected,
@@ -263,6 +274,7 @@ function MachineRow({
 }: {
   node: NodeView;
   canManage: boolean;
+  sshAvailable: boolean;
   knownTags?: string[];
   metadata?: NodeMetadataValue;
   selected: boolean;
@@ -459,7 +471,7 @@ function MachineRow({
       {canManage && (
         <Td className="pr-4" align="right" onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-end gap-0.5">
-            <RowQuickActions node={node} />
+            <RowQuickActions node={node} sshAvailable={sshAvailable} />
             <NodeActionsMenu
               nodeId={node.id}
               name={node.name}

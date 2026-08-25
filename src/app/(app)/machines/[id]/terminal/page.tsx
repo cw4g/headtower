@@ -1,9 +1,10 @@
 import * as React from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Lock, SquareTerminal } from "lucide-react";
+import { ArrowLeft, Lock, PlugZap, SquareTerminal } from "lucide-react";
 import { nodes as nodesApi, HeadscaleRequestError } from "@/lib/headscale";
 import type { Node } from "@/lib/headscale";
+import { sshBridgeAvailable } from "@/lib/agent";
 import { sessionCan } from "@/lib/authz";
 import { toNodeView, nowMs } from "@/lib/machines";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -38,6 +39,29 @@ export default async function MachineTerminalPage({
         icon={Lock}
         title="Terminal access isn't available"
         description="Your role doesn't have the ssh.connect capability. Ask an operator to grant terminal access, or sign in with an account that has it."
+        action={
+          <Link
+            href={`/machines/${id}`}
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-beacon-500 transition-colors hover:text-beacon-400"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden />
+            Back to machine
+          </Link>
+        }
+      />
+    );
+  }
+
+  // Gate the destination, not just the entry points. Every route here - the
+  // detail page's button, the list row's quick link, a bookmark - lands on this
+  // page, so refusing once explains it everywhere. Without this the page built
+  // a whole console whose only possible outcome was a failed token mint.
+  if (!sshBridgeAvailable()) {
+    return (
+      <EmptyState
+        icon={PlugZap}
+        title="Browser SSH isn't set up"
+        description="Terminal sessions are tunnelled through the Headtower agent, which needs a URL and a shared SSH secret. Configure both under Settings > Agent; nothing else here depends on it."
         action={
           <Link
             href={`/machines/${id}`}

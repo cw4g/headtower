@@ -267,11 +267,17 @@ function versionBreakdown(views: NodeView[]): BarDatum[] {
   return topSlices(counts, 8);
 }
 
-/** The DeviceBreakdown empty-state copy, tailored to why there's nothing to show. */
+/**
+ * The DeviceBreakdown empty-state copy, tailored to why there's nothing to show.
+ *
+ * "above", not "below": the Agent widget with its toggle renders before these
+ * two, so the old wording pointed the operator the wrong way. Only ever seen
+ * when an agent URL exists — with none, these widgets are not rendered at all.
+ */
 function breakdownHint(agentEnabled: boolean, noun: string): string {
   return agentEnabled
     ? `No agent-reported ${noun} yet. It appears once a device checks in.`
-    : `Turn on the agent below to see ${noun} here.`;
+    : `Turn on the agent above to see ${noun} here.`;
 }
 
 /**
@@ -615,6 +621,9 @@ export default async function DashboardPage() {
   // and recentAuditEntries() / controlPlaneKeyExpiry() are their own
   // best-effort wrappers.
   const agentConfig = getConfig().agent;
+  // "Configured at all", not "enabled": the two are different states and only
+  // the first decides whether the agent's widgets can ever hold anything.
+  const agentConfigured = agentConfig.url !== null;
   const [agentHealth, canWriteSettings, recentActivity, controlPlaneExpiry] =
     await Promise.all([
       getAgentHealth(),
@@ -690,15 +699,24 @@ export default async function DashboardPage() {
         <Stat label="Routes" value={routeCount} href="/routes" />
       </Surface>
 
-      {/* Agent sidecar: health readout + on/off, independent of tailnet size. */}
-      <Widget label="Agent">
-        <AgentWidget
-          health={agentHealth}
-          configured={agentConfig.url !== null}
-          enabled={agentConfig.enabled}
-          canWrite={canWriteSettings}
-        />
-      </Widget>
+      {/* Agent sidecar: health readout + on/off, independent of tailnet size.
+          Only when an agent URL exists at all. With none, this widget could show
+          nothing but a pulsing critical dot and "No agent URL is configured" —
+          reporting a fault where there is only an unused optional feature, and
+          teaching the operator to disregard a red dot. It also has no toggle to
+          offer in that state (`configured` gates it), so there is no control to
+          keep reachable. Settings > Agent is where the feature is introduced.
+          A configured-but-off agent DOES keep its widget: the toggle works. */}
+      {agentConfigured && (
+        <Widget label="Agent">
+          <AgentWidget
+            health={agentHealth}
+            configured
+            enabled={agentConfig.enabled}
+            canWrite={canWriteSettings}
+          />
+        </Widget>
+      )}
 
       {total === 0 ? (
         <EmptyState
@@ -791,21 +809,26 @@ export default async function DashboardPage() {
           </div>
 
           {/* Agent-reported device mix, degrading to a hint when the agent is
-              off or hasn't reported in yet. */}
-          <div className="grid gap-4 lg:grid-cols-2">
-            <Widget label="Operating systems">
-              <DeviceBreakdown
-                bars={osBars}
-                emptyHint={breakdownHint(agentConfig.enabled, "operating systems")}
-              />
-            </Widget>
-            <Widget label="Client versions">
-              <DeviceBreakdown
-                bars={versionBars}
-                emptyHint={breakdownHint(agentConfig.enabled, "client versions")}
-              />
-            </Widget>
-          </div>
+              off or hasn't reported in yet — and omitted entirely when no agent
+              is configured, because these two can then never hold anything. Note
+              the platforms donut above stays either way: it prefers agent data
+              but falls back to the registration method, so it works alone. */}
+          {agentConfigured && (
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Widget label="Operating systems">
+                <DeviceBreakdown
+                  bars={osBars}
+                  emptyHint={breakdownHint(agentConfig.enabled, "operating systems")}
+                />
+              </Widget>
+              <Widget label="Client versions">
+                <DeviceBreakdown
+                  bars={versionBars}
+                  emptyHint={breakdownHint(agentConfig.enabled, "client versions")}
+                />
+              </Widget>
+            </div>
+          )}
 
           {/* Upcoming key expiries. */}
           <Widget label="Key expiry">

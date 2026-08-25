@@ -6,7 +6,7 @@ import {
   policy as policyApi,
 } from "@/lib/headscale";
 import { parsePolicy } from "@/lib/policy";
-import { getAgentPeers } from "@/lib/agent";
+import { getAgentPeers, sshBridgeAvailable } from "@/lib/agent";
 import { withoutAgentNodes } from "@/lib/agent-node";
 import { sessionCan } from "@/lib/authz";
 import { getConfig } from "@/lib/config";
@@ -85,6 +85,9 @@ export default async function MachinesPage() {
   const canAddDevice = !error && (await sessionCan("keys.write"));
   // Row/card action menus (rename, tags, expire, delete) need machines.write.
   const canManage = !error && (await sessionCan("machines.write"));
+  // Terminal quick-links only make sense when the agent's SSH bridge exists at
+  // all; a row cannot ask for that itself (client component, config read).
+  const sshAvailable = sshBridgeAvailable();
   // The dialog's "use existing key" mode builds its command box up front (no
   // server round trip), so it needs the login-server URL before the operator
   // ever submits anything, not just after `createDeviceKey` returns one.
@@ -125,6 +128,7 @@ export default async function MachinesPage() {
             nodes={views}
             nowMs={now}
             canManage={canManage}
+            sshAvailable={sshAvailable}
             knownTags={knownTags}
             metadata={nodeMetadata}
           />
@@ -132,6 +136,7 @@ export default async function MachinesPage() {
           <MachinesTable
             nodes={views}
             canManage={canManage}
+            sshAvailable={sshAvailable}
             knownTags={knownTags}
             metadata={nodeMetadata}
           />

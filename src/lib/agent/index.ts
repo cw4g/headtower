@@ -42,6 +42,26 @@ function agentBaseUrl(): string | null {
   return raw.replace(/\/+$/, "");
 }
 
+/**
+ * Whether the browser-SSH bridge can work at all: an agent URL, not turned off,
+ * and a secret to sign tokens with.
+ *
+ * One predicate for every entry point, because they used to disagree. The
+ * machines list hid its terminal link when the agent had not reported a node
+ * (`row-quick-actions.tsx`), and its comment claimed the detail page "mirrors"
+ * that gate - the detail page checked only the RBAC capability and an address,
+ * so it offered a button, a new tab and a full console before the token mint
+ * failed. Neither looked at the secret, which is the part that decides.
+ *
+ * Deliberately does NOT probe the agent. A liveness check per render is
+ * {@link getAgentHealth}'s job, and a control that appears and disappears with a
+ * network timeout is worse than one that is honestly absent. This answers "is
+ * this configured to be possible", not "is it up right now".
+ */
+export function sshBridgeAvailable(): boolean {
+  return agentBaseUrl() !== null && Boolean(getConfig().agent.sshSecret?.trim());
+}
+
 function asString(value: unknown): string | null {
   return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
 }

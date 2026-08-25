@@ -24,23 +24,28 @@ function sshHostFor(node: NodeView): string | null {
  * hover/focus-within state and lights the beacon only on hover, so the resting
  * row stays calm. The kebab remains the full action set; this is a shortcut.
  *
- * The terminal link mirrors the detail page's gate: it appears only when the
- * agent sidecar reports the node (so a shell can actually be brokered over the
- * tailnet) and the node has an address/hostname to reach. The terminal page
- * re-checks the `ssh.connect` capability server-side before it opens.
+ * The terminal link needs three things to be true: the SSH bridge is set up at
+ * all (`sshBridgeAvailable` on the server, passed in as `sshAvailable` - this is
+ * a client component), the agent reports this node, and the node has an
+ * address/hostname to reach. The detail page applies the same first condition,
+ * and the terminal page re-checks both it and the `ssh.connect` capability
+ * server-side before it opens.
  *
  * `className` is merged onto the cluster wrapper so a caller can float it (the
  * card corner adds a translucent backdrop; the table cell needs none).
  */
 export function RowQuickActions({
   node,
+  sshAvailable = true,
   className,
 }: {
   node: NodeView;
+  /** Whether browser SSH is configured server-side; defaults to permissive. */
+  sshAvailable?: boolean;
   className?: string;
 }) {
   const sshHost = sshHostFor(node);
-  const canOpenTerminal = node.agent != null && sshHost != null;
+  const canOpenTerminal = sshAvailable && node.agent != null && sshHost != null;
   const primaryAddr = node.ipv4 ?? node.ipv6;
 
   // Nothing worth surfacing - render nothing so the cluster never reserves

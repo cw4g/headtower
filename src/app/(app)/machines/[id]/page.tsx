@@ -21,7 +21,7 @@ import {
   HeadscaleRequestError,
 } from "@/lib/headscale";
 import type { Node } from "@/lib/headscale";
-import { getAgentPeers } from "@/lib/agent";
+import { getAgentPeers, sshBridgeAvailable } from "@/lib/agent";
 import { sessionCan } from "@/lib/authz";
 import { listAudit, type AuditEntry } from "@/lib/audit";
 import {
@@ -130,7 +130,12 @@ export default async function MachineDetailPage({
         <MachineDetail
           node={found}
           canManage={canManage}
-          canSsh={canSsh}
+          // Holding ssh.connect is not enough: browser SSH runs entirely through
+          // the agent's bridge, so without one the button opens a new tab and a
+          // full console that can only fail at the token mint. The machines list
+          // already gated its own terminal link; this is the parity its comment
+          // claimed but never had.
+          canSsh={canSsh && sshBridgeAvailable()}
           agent={agent}
           audit={nodeAudit}
           metadata={metadata}

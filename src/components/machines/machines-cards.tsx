@@ -42,11 +42,20 @@ export function MachinesCards({
   nodes,
   nowMs,
   canManage = false,
+  sshAvailable = true,
   knownTags,
   metadata,
 }: {
   nodes: NodeView[];
   nowMs: number;
+  /**
+   * Whether browser SSH is configured at all (agent URL + shared secret).
+   * Computed server-side via `sshBridgeAvailable()` and passed down for the same
+   * reason as `canManage`: this is a client component and the check reads
+   * config. Without it a card offers a terminal link that can only end in a
+   * failed token mint.
+   */
+  sshAvailable?: boolean;
   /**
    * Gates the per-card actions kebab and the bulk selection affordance.
    * Computed server-side via `sessionCan("machines.write")` and passed down
@@ -129,6 +138,7 @@ export function MachinesCards({
               node={node}
               nowMs={nowMs}
               canManage={canManage}
+              sshAvailable={sshAvailable}
               knownTags={knownTags}
               metadata={metadata?.[node.id]}
               selected={selected.has(node.id)}
@@ -153,6 +163,7 @@ function HostCard({
   node,
   nowMs,
   canManage,
+  sshAvailable,
   knownTags,
   metadata,
   selected,
@@ -161,6 +172,7 @@ function HostCard({
   node: NodeView;
   nowMs: number;
   canManage: boolean;
+  sshAvailable: boolean;
   knownTags?: string[];
   metadata?: NodeMetadataValue;
   selected: boolean;
@@ -401,6 +413,7 @@ function HostCard({
         <div className="absolute right-2.5 top-2.5 flex items-center gap-0.5">
           <RowQuickActions
             node={node}
+            sshAvailable={sshAvailable}
             className="rounded-control bg-surface/80 backdrop-blur-sm"
           />
           <NodeActionsMenu
