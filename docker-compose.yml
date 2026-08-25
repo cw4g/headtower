@@ -31,6 +31,11 @@ services:
       - HEADTOWER_SESSION_SECRET=${HEADTOWER_SESSION_SECRET:-}
       # Optional: encrypts secrets stored in the DB at rest.
       - HEADTOWER_SECRET=${HEADTOWER_SECRET:-}
+      # Update check. Empty keeps the default (upstream's version.json); point
+      # HEADTOWER_VERSION_URL at your own file for a fork, or set
+      # HEADTOWER_UPDATE_CHECK=false to switch the check off.
+      - HEADTOWER_VERSION_URL=${HEADTOWER_VERSION_URL:-}
+      - HEADTOWER_UPDATE_CHECK=${HEADTOWER_UPDATE_CHECK:-}
       # Optional agent (device metadata + browser SSH). Reach it in-cluster at
       # http://agent:8410 (set HEADTOWER_AGENT_URL in .env when you enable the
       # agent profile below); the SSH secret must match the agent service's.
