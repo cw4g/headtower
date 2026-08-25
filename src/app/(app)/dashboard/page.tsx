@@ -809,13 +809,14 @@ export default async function DashboardPage() {
 
           {/* Upcoming key expiries. */}
           <Widget label="Key expiry">
+            {/* No explicit domain below: Timeline already spans the events plus
+                the "now" marker, and keeps labels inside the frame itself. The
+                padding passed here before (a day either side, plus a floor of
+                now + 7 days) cost real width once the axis began compressing
+                empty stretches - the trailing day alone took 41% of the chart,
+                because inside the expiry cluster's span a day is steep. */}
             {expiries.length > 0 ? (
-              <Timeline
-                events={expiries}
-                now={now}
-                start={Math.min(now, expiries[0].time) - DAY}
-                end={Math.max(now + 7 * DAY, expiries[expiries.length - 1].time) + DAY}
-              />
+              <Timeline events={expiries} now={now} />
             ) : (
               <WidgetNote>
                 No key expiries scheduled in the next{" "}

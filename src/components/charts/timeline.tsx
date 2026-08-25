@@ -14,6 +14,7 @@ import * as React from "react";
 import { cn } from "@/lib/cn";
 import { type ChartTone, toneFill, toneStroke, r2 } from "./shared";
 import {
+  estimateTextWidth,
   placeLabels,
   segmentedTimeScale,
   type TimelineSegment,
@@ -66,6 +67,8 @@ const LABEL_GAP = 10;
 const TICK_H = 20;
 const LABEL_SIZE = 11;
 const TICK_SIZE = 10;
+/** Breathing room budgeted per label when sizing a span. */
+const LABEL_PAD = 10;
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -117,13 +120,38 @@ export function Timeline({
 }: TimelineProps) {
   const sorted = [...events].sort((a, b) => a.time - b.time);
   const times = sorted.map((e) => e.time);
-  const lo = start ?? (times.length ? Math.min(...times) : 0);
-  const hi = end ?? (times.length ? Math.max(...times) : 1);
 
   // "now" is a significant time too: without it a marker sitting far from every
   // event would be swallowed by a break instead of anchoring one end of it.
   const marks = now != null ? [...times, now] : times;
-  const scale = segmentedTimeScale(marks, [lo, hi], [PAD, VW - PAD]);
+
+  // The default domain spans the events AND the marker, so a caller never has
+  // to pad the axis to keep "now" in frame - the frame margin is a coordinate
+  // concern (PAD) and edge labels anchor inwards. Time padding is actively
+  // harmful on a segmented axis: inside a narrow span the local scale is steep,
+  // so a single day of padding measured 278 of 680 units, 41% of the chart.
+  const lo = start ?? (marks.length ? Math.min(...marks) : 0);
+  const hi = end ?? (marks.length ? Math.max(...marks) : 1);
+  const scale = segmentedTimeScale(marks, [lo, hi], [PAD, VW - PAD], {
+    // Width follows the labels a span has to fit, not how long it lasts -- see
+    // `spanWeight` in ./timeline-scale for the measurement that forced this.
+    // Summing the labels aims each span at a single-row layout; when that does
+    // not fit, placeLabels stacks rows as a fallback.
+    spanWeight: (from, to) => {
+      const inside = sorted.filter((e) => e.time >= from && e.time <= to);
+      const labels = inside.reduce(
+        (total, e) => total + estimateTextWidth(e.label, LABEL_SIZE) + LABEL_PAD,
+        0,
+      );
+      // The "now" caption needs room in whichever span it lands in, even though
+      // it is a marker rather than an event.
+      const marker =
+        now != null && now >= from && now <= to
+          ? estimateTextWidth("now", 10) + LABEL_PAD
+          : 0;
+      return labels + marker;
+    },
+  });
 
   const label =
     ariaLabel ??
@@ -153,6 +181,46 @@ export function Timeline({
       : Array.from({ length: ticks }, (_, i) => lo + ((hi - lo) * i) / Math.max(ticks - 1, 1));
 
   const nowX = now != null && now >= lo && now <= hi ? scale.at(now) : null;
+
+  // Thin the ticks so their text cannot collide. Content-sized spans can be
+  // narrower than two dates side by side, and a boundary date is worth more
+  // than a domain edge: the edges are usually just the caller's padding, while
+  // the dates flanking a break say what the break skipped. So offer them in
+  // priority order and keep only what fits.
+  const tickCandidates = tickTimes.map((t) => {
+    const gx = scale.at(t);
+    const beforeBreak = scale.gaps.some((g) => g.from === t);
+    const afterBreak = scale.gaps.some((g) => g.to === t);
+    const anchor: "start" | "middle" | "end" =
+      beforeBreak && !afterBreak
+        ? "end"
+        : afterBreak && !beforeBreak
+          ? "start"
+          : gx <= PAD + 2
+            ? "start"
+            : gx >= VW - PAD - 2
+              ? "end"
+              : "middle";
+    const width = estimateTextWidth(formatTime(t), TICK_SIZE);
+    const left = anchor === "start" ? gx : anchor === "end" ? gx - width : gx - width / 2;
+    return {
+      t,
+      gx,
+      anchor,
+      left,
+      right: left + width,
+      priority: beforeBreak || afterBreak ? 2 : gx <= PAD + 2 || gx >= VW - PAD - 2 ? 0 : 1,
+    };
+  });
+
+  const keptTicks: typeof tickCandidates = [];
+  for (const candidate of [...tickCandidates].sort((a, b) => b.priority - a.priority)) {
+    const clashes = keptTicks.some(
+      (kept) => candidate.left < kept.right + 3 && kept.left < candidate.right + 3,
+    );
+    if (!clashes) keptTicks.push(candidate);
+  }
+  keptTicks.sort((a, b) => a.gx - b.gx);
 
   return (
     <svg
@@ -207,46 +275,27 @@ export function Timeline({
 
       {/* date ticks, in their own band at the bottom so they cannot interleave
           with the event rows the way a row directly under the axis did */}
-      {tickTimes.map((t, i) => {
-        const gx = scale.at(t);
-        // The dates flanking a break are only `gapWidth` apart while each is
-        // several times that wide, so centring both guarantees an overlap
-        // (measured: 13px). Anchor them away from the break instead - the one
-        // before it ends at the seam, the one after it starts there.
-        const beforeBreak = scale.gaps.some((g) => g.from === t);
-        const afterBreak = scale.gaps.some((g) => g.to === t);
-        const anchor =
-          beforeBreak && !afterBreak
-            ? "end"
-            : afterBreak && !beforeBreak
-              ? "start"
-              : gx <= PAD + 2
-                ? "start"
-                : gx >= VW - PAD - 2
-                  ? "end"
-                  : "middle";
-        return (
-          <g key={`tick-${i}`}>
-            <line
-              x1={gx}
-              y1={axisY - 3}
-              x2={gx}
-              y2={axisY + 3}
-              className="stroke-line"
-              strokeWidth={1}
-            />
-            <text
-              x={gx}
-              y={height - 6}
-              textAnchor={anchor}
-              className="data fill-ink-faint"
-              fontSize={TICK_SIZE}
-            >
-              {formatTime(t)}
-            </text>
-          </g>
-        );
-      })}
+      {keptTicks.map(({ t, gx, anchor }, i) => (
+        <g key={`tick-${i}`}>
+          <line
+            x1={gx}
+            y1={axisY - 3}
+            x2={gx}
+            y2={axisY + 3}
+            className="stroke-line"
+            strokeWidth={1}
+          />
+          <text
+            x={gx}
+            y={height - 6}
+            textAnchor={anchor}
+            className="data fill-ink-faint"
+            fontSize={TICK_SIZE}
+          >
+            {formatTime(t)}
+          </text>
+        </g>
+      ))}
 
       {/* now marker */}
       {nowX != null && (

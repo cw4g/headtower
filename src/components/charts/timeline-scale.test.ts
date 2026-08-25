@@ -78,6 +78,38 @@ test("several clusters each keep their own width", () => {
   }
 });
 
+test("span width follows content, not duration", () => {
+  // Regression: weighting by duration gave the domain's one padding day 210 of
+  // 680 units - 31% of the chart for an empty stretch holding only "now", drawn
+  // eight times wider than the 176-day break beside it.
+  const lo = NOW - DAY;
+  const hi = CLUSTER[2] + DAY;
+  const byDuration = segmentedTimeScale([NOW, ...CLUSTER], [lo, hi], RANGE);
+
+  // Content weights: the leading span shows one marker, the cluster three
+  // labels, so the cluster should take far more of the axis.
+  const byContent = segmentedTimeScale([NOW, ...CLUSTER], [lo, hi], RANGE, {
+    spanWeight: (from, to) => {
+      const inside = CLUSTER.filter((t) => t >= from && t <= to).length;
+      const marker = NOW >= from && NOW <= to ? 1 : 0;
+      return inside * 60 + marker * 25;
+    },
+  });
+
+  const leading = (s: typeof byDuration) => {
+    const first = s.segments[0];
+    return first.x1 - first.x0;
+  };
+  assert.ok(byDuration.broken && byContent.broken);
+  assert.ok(
+    leading(byContent) < leading(byDuration),
+    `content weighting must shrink the padding span: ${leading(byContent)} vs ${leading(byDuration)}`,
+  );
+  // The cluster must end up with the clear majority of the axis.
+  const clusterWidth = byContent.at(CLUSTER[2]) - byContent.at(CLUSTER[0]);
+  assert.ok(clusterWidth > 0.5 * (RANGE[1] - RANGE[0]), `cluster got ${clusterWidth}`);
+});
+
 test("positions stay monotonic across breaks", () => {
   const times = [NOW, NOW + 200 * DAY, NOW + 201 * DAY, NOW + 500 * DAY];
   const scale = segmentedTimeScale(times, [NOW, NOW + 500 * DAY], RANGE);

@@ -74,6 +74,20 @@ export interface SegmentOptions {
    * ago when there is room to show it.
    */
   minSeparation?: number;
+  /**
+   * Relative width a span should get, given its bounds. Defaults to its
+   * duration.
+   *
+   * Duration is the wrong measure once an axis is broken. A caller pads the
+   * domain around its data, so the first span is often nothing but padding
+   * holding a single marker - and by duration it then claims a share
+   * proportional to that padding. Measured on a real dashboard: one empty
+   * padding day took 210 of 680 units (31% of the chart) while the 176-day
+   * break it sat next to got 26, drawing one day eight times wider than half a
+   * year. Weighting by what a span must DISPLAY (its labels) puts the width
+   * where the content is; time stays linear inside each span either way.
+   */
+  spanWeight?: (from: number, to: number) => number;
 }
 
 const DEFAULTS = {
@@ -216,8 +230,9 @@ export function segmentedTimeScale(
     };
   }
 
+  const weigh = options.spanWeight ?? ((from, to) => to - from);
   const widths = allocate(
-    spans.map((s) => s.to - s.from),
+    spans.map((s) => Math.max(0, weigh(s.from, s.to))),
     widthForSpans,
     minSpanWidth,
   );
