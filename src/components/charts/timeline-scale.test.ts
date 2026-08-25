@@ -105,9 +105,8 @@ test("span width follows content, not duration", () => {
     leading(byContent) < leading(byDuration),
     `content weighting must shrink the padding span: ${leading(byContent)} vs ${leading(byDuration)}`,
   );
-  // The cluster must end up with the clear majority of the axis.
-  const clusterWidth = byContent.at(CLUSTER[2]) - byContent.at(CLUSTER[0]);
-  assert.ok(clusterWidth > 0.5 * (RANGE[1] - RANGE[0]), `cluster got ${clusterWidth}`);
+  // How much the cluster then gets is the break's business, not this test's --
+  // see "breaks absorb the spare width instead of the spans".
 });
 
 test("positions stay monotonic across breaks", () => {
@@ -195,16 +194,65 @@ test("estimated label width grows with text and font size", () => {
   assert.ok(estimateTextWidth("same", 14) > estimateTextWidth("same", 11));
 });
 
+test("breaks absorb the spare width instead of the spans", () => {
+  // The failure this exists for: with spans stretched to fill the frame, a
+  // one-day cluster took ~600 units while the 176-day break kept 26 - one day
+  // drawn 22 times wider than half a year. Spans must take only what their
+  // content needs; the break is the elastic part.
+  const cluster = [NOW + 174 * DAY, NOW + 175 * DAY];
+  const scale = segmentedTimeScale([NOW, ...cluster], [NOW, cluster[1]], RANGE, {
+    spanWeight: (from, to) => {
+      const inside = cluster.filter((t) => t >= from && t <= to).length;
+      return inside * 70 + (NOW >= from && NOW <= to ? 30 : 0);
+    },
+  });
+  assert.equal(scale.broken, true);
+  const gap = scale.gaps[0];
+  const gapWidth = gap.x1 - gap.x0;
+  const clusterWidth = scale.at(cluster[1]) - scale.at(cluster[0]);
+  assert.ok(
+    gapWidth > clusterWidth,
+    `176 days (${Math.round(gapWidth)}) must not be narrower than one day (${Math.round(clusterWidth)})`,
+  );
+});
+
+test("data keeps clear of the seams", () => {
+  // A dot flush against a break glyph reads as if it belonged to the break.
+  const cluster = [NOW + 174 * DAY, NOW + 175 * DAY];
+  const scale = segmentedTimeScale([NOW, ...cluster], [NOW, cluster[1]], RANGE, {
+    spanWeight: () => 150,
+  });
+  const gap = scale.gaps[0];
+  assert.ok(scale.at(cluster[0]) > gap.x1 + 1, "first point sits right on the break");
+  assert.ok(scale.at(cluster[1]) < RANGE[1], "last point sits on the frame edge");
+});
+
+/** placeLabels, with widths derived from the label text like the renderer does. */
+function place(items: ReadonlyArray<{ label: string; x: number; rows?: number }>) {
+  return placeLabels(items, {
+    x: (i) => i.x,
+    width: (i) => estimateTextWidth(i.label, 11),
+    rowSpan: (i) => i.rows ?? 1,
+    bounds: RANGE,
+  });
+}
+
 /** Recompute each label's box the way the renderer will, to assert on overlap. */
 function boxes(
-  placements: ReturnType<typeof placeLabels<{ label: string; x: number }>>["placements"],
+  placements: ReturnType<typeof place>["placements"],
   fontSize: number,
 ) {
-  return placements.map((p) => {
+  return placements.flatMap((p) => {
     const w = estimateTextWidth(p.item.label, fontSize);
     const left =
       p.anchor === "start" ? p.textX : p.anchor === "end" ? p.textX - w : p.textX - w / 2;
-    return { key: `${p.side}:${p.row}`, left, right: left + w, label: p.item.label };
+    // One box per row the item occupies, since every row carries a line.
+    return Array.from({ length: p.rowSpan }, (_, j) => ({
+      key: `${p.side}:${p.row + j}`,
+      left,
+      right: left + w,
+      label: p.item.label,
+    }));
   });
 }
 
@@ -217,12 +265,7 @@ test("no two labels in the same row overlap", () => {
     { label: "pixel-8a", x: 706 },
     { label: "christophs-pixel-9a", x: 708 },
   ];
-  const { placements } = placeLabels(items, {
-    x: (i) => i.x,
-    label: (i) => i.label,
-    fontSize: 11,
-    bounds: RANGE,
-  });
+  const { placements } = place(items);
   const byRow = new Map<string, Array<{ left: number; right: number }>>();
   for (const b of boxes(placements, 11)) {
     const list = byRow.get(b.key) ?? [];
@@ -245,12 +288,7 @@ test("a tight cluster is spread over both sides and several rows", () => {
     label: `device-number-${i}`,
     x: 400 + i * 3,
   }));
-  const { placements, rowsAbove, rowsBelow } = placeLabels(items, {
-    x: (i) => i.x,
-    label: (i) => i.label,
-    fontSize: 11,
-    bounds: RANGE,
-  });
+  const { placements, rowsAbove, rowsBelow } = place(items);
   assert.equal(placements.length, 6);
   assert.ok(rowsAbove >= 2 && rowsBelow >= 2, `rows: ${rowsAbove}/${rowsBelow}`);
   // Nearest-the-axis rows fill first, so no row is skipped.
@@ -264,14 +302,29 @@ test("well separated labels all stay in the innermost rows", () => {
     { label: "b", x: 300 },
     { label: "c", x: 500 },
   ];
-  const { rowsAbove, rowsBelow } = placeLabels(items, {
-    x: (i) => i.x,
-    label: (i) => i.label,
-    fontSize: 11,
-    bounds: RANGE,
-  });
+  const { rowsAbove, rowsBelow } = place(items);
   assert.equal(rowsAbove, 1);
   assert.equal(rowsBelow, 0);
+});
+
+test("a group claiming several rows blocks all of them", () => {
+  // One dot carrying three stacked names must not have another group's label
+  // land in the middle of its block.
+  const items = [
+    { label: "same-day-group", x: 300, rows: 3 },
+    { label: "close-neighbour", x: 306 },
+  ];
+  const { placements } = place(items);
+  const group = placements.find((p) => p.item.label === "same-day-group")!;
+  const neighbour = placements.find((p) => p.item.label === "close-neighbour")!;
+  assert.equal(group.rowSpan, 3);
+  const groupRows = new Set(
+    Array.from({ length: group.rowSpan }, (_, j) => `${group.side}:${group.row + j}`),
+  );
+  assert.ok(
+    !groupRows.has(`${neighbour.side}:${neighbour.row}`),
+    "the neighbour landed inside the group's rows",
+  );
 });
 
 test("edge labels are anchored inwards so they cannot spill out", () => {
@@ -279,12 +332,7 @@ test("edge labels are anchored inwards so they cannot spill out", () => {
     { label: "a-very-long-device-name-at-the-left", x: 41 },
     { label: "a-very-long-device-name-at-the-right", x: 719 },
   ];
-  const { placements } = placeLabels(items, {
-    x: (i) => i.x,
-    label: (i) => i.label,
-    fontSize: 11,
-    bounds: RANGE,
-  });
+  const { placements } = place(items);
   const left = placements.find((p) => p.x === 41)!;
   const right = placements.find((p) => p.x === 719)!;
   assert.equal(left.anchor, "start");

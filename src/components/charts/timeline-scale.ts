@@ -1,6 +1,6 @@
 /**
- * Segmented time scale for the Timeline chart — pure, dependency-free, and
- * unit-tested separately from the SVG that draws it.
+ * Segmented time scale + label packing for the Timeline chart — pure,
+ * dependency-free, and unit-tested separately from the SVG that draws it.
  *
  * WHY NOT A PLAIN LINEAR SCALE
  *
@@ -13,17 +13,29 @@
  * axis units, i.e. the last 0.6% of the width, while 98% sat empty.
  *
  * Dropping "now" from the domain would fix the crowding but lose the very
- * comparison the chart exists for (both call sites deliberately pad the domain
- * so the marker stays in frame). Zooming to the events only moves the problem
- * when there are SEVERAL clusters - the gaps between them are then blank
- * instead.
+ * comparison the chart exists for. Zooming to the events only moves the problem
+ * when there are SEVERAL clusters - the gaps between them are then blank.
  *
- * So the axis is cut into segments instead: "span" segments carry the clusters
- * and get width proportional to their duration, "gap" segments stand for the
- * skipped emptiness and get a fixed narrow width, drawn with a break glyph and
- * labelled with what was skipped. Time inside a span stays strictly linear, so
- * positions within a cluster remain honest; only the marked breaks are
- * compressed.
+ * So the axis is cut into segments: "span" segments carry the clusters, "gap"
+ * segments stand for skipped emptiness and are drawn with a break glyph. Time
+ * inside a span stays strictly linear; only the marked breaks are compressed.
+ *
+ * WHICH PART OF THE AXIS IS ELASTIC
+ *
+ * Spans get the width their CONTENT needs and no more; the breaks absorb
+ * whatever is left over. That assignment is the whole trick, and it took two
+ * measured failures to find:
+ *
+ *   - Sizing spans by DURATION handed an empty padding day 210 of 680 units
+ *     (31% of the chart), drawing one day eight times wider than the 176-day
+ *     break beside it.
+ *   - Sizing spans by content but still stretching them to fill the frame gave
+ *     a one-day cluster ~600 units while 176 days kept 26 - a day drawn 22
+ *     times wider than half a year.
+ *
+ * A break is the right elastic element because it is the only part of the axis
+ * already declared non-linear: stretching it costs no honesty, while stretching
+ * a span inflates its local time scale and lies about it.
  */
 
 /** One piece of a segmented axis: real time (`span`) or skipped time (`gap`). */
@@ -50,8 +62,7 @@ export interface SegmentedScale {
 export interface SegmentOptions {
   /**
    * A stretch of empty time becomes a break only if it spans at least this
-   * fraction of the whole domain. Below that, compressing it would cost more
-   * legibility (an unexplained glyph) than it buys.
+   * fraction of the whole domain.
    */
   minGapRatio?: number;
   /**
@@ -62,30 +73,26 @@ export interface SegmentOptions {
    * the points are evenly spaced. A break has to be an OUTLIER.
    */
   breakFactor?: number;
-  /** Coordinate width each break is compressed to. */
-  gapWidth?: number;
+  /** Narrowest a break may be drawn; it grows into any leftover width. */
+  minGapWidth?: number;
   /** Floor for a span's width, so a zero-duration cluster still gets room. */
   minSpanWidth?: number;
   /**
    * Breaking is only considered once two data points would land closer than
-   * this on a plain linear axis. Below that threshold nothing is crowded, and
-   * compressing an empty stretch would only hide a proportion the reader can
-   * judge at a glance - a node registered 18 months ago should *look* 18 months
-   * ago when there is room to show it.
+   * this on a plain linear axis. Below that nothing is crowded, and compressing
+   * an empty stretch would hide a proportion the reader can judge at a glance -
+   * a node registered 18 months ago should *look* 18 months ago when there is
+   * room to show it.
    */
   minSeparation?: number;
   /**
-   * Relative width a span should get, given its bounds. Defaults to its
-   * duration.
-   *
-   * Duration is the wrong measure once an axis is broken. A caller pads the
-   * domain around its data, so the first span is often nothing but padding
-   * holding a single marker - and by duration it then claims a share
-   * proportional to that padding. Measured on a real dashboard: one empty
-   * padding day took 210 of 680 units (31% of the chart) while the 176-day
-   * break it sat next to got 26, drawing one day eight times wider than half a
-   * year. Weighting by what a span must DISPLAY (its labels) puts the width
-   * where the content is; time stays linear inside each span either way.
+   * Inset kept free at each end of a span, so its outermost data point does not
+   * sit flush against a break glyph or the frame edge.
+   */
+  spanMargin?: number;
+  /**
+   * Width a span needs for its content, given its bounds. Defaults to its
+   * duration, which is almost never what a caller wants - see the module note.
    */
   spanWeight?: (from: number, to: number) => number;
 }
@@ -93,9 +100,10 @@ export interface SegmentOptions {
 const DEFAULTS = {
   minGapRatio: 0.12,
   breakFactor: 3,
-  gapWidth: 26,
+  minGapWidth: 34,
   minSpanWidth: 48,
   minSeparation: 45,
+  spanMargin: 12,
 } as const;
 
 /** Linear-interpolated quantile of an unsorted sample. */
@@ -109,13 +117,15 @@ function quantile(values: readonly number[], q: number): number {
   return base + 1 < s.length ? s[base] + rest * (s[base + 1] - s[base]) : s[base];
 }
 
+function sumOf(ns: readonly number[]): number {
+  let t = 0;
+  for (const n of ns) t += n;
+  return t;
+}
+
 /**
  * Build a segmented scale over `domain` for the given significant `times`
  * (event times plus any marker such as "now").
- *
- * Empty stretches between consecutive significant times are candidates for a
- * break; everything else is kept linear. The domain edges are honoured, so a
- * caller's padding around the data is preserved.
  */
 export function segmentedTimeScale(
   times: readonly number[],
@@ -125,14 +135,18 @@ export function segmentedTimeScale(
 ): SegmentedScale {
   const minGapRatio = options.minGapRatio ?? DEFAULTS.minGapRatio;
   const breakFactor = options.breakFactor ?? DEFAULTS.breakFactor;
-  const gapWidth = options.gapWidth ?? DEFAULTS.gapWidth;
+  const minGapWidth = options.minGapWidth ?? DEFAULTS.minGapWidth;
   const minSpanWidth = options.minSpanWidth ?? DEFAULTS.minSpanWidth;
   const minSeparation = options.minSeparation ?? DEFAULTS.minSeparation;
+  const spanMargin = options.spanMargin ?? DEFAULTS.spanMargin;
+  const weigh = options.spanWeight ?? ((from, to) => to - from);
 
   const [lo, hi] = domain;
   const [r0, r1] = range;
   const totalSpan = hi - lo;
   const totalWidth = r1 - r0;
+
+  const clampTime = (t: number) => Math.min(Math.max(t, lo), hi);
 
   // Degenerate domain (single instant, or an inverted/zero range): one span, so
   // every time maps to the start and callers need no special case.
@@ -141,26 +155,18 @@ export function segmentedTimeScale(
     return { segments: [only], at: () => r0, gaps: [], broken: false };
   }
 
-  // Significant times, clamped into the domain, deduplicated, ascending. The
-  // edges count too: they bound the first and last span.
-  const marks = Array.from(
-    new Set(
-      [lo, hi, ...times]
-        .filter((t) => Number.isFinite(t))
-        .map((t) => Math.min(Math.max(t, lo), hi)),
-    ),
-  ).sort((a, b) => a - b);
-
   const linearAt = (t: number) => r0 + ((t - lo) / totalSpan) * totalWidth;
+  const asLinear = (): SegmentedScale => ({
+    segments: [{ kind: "span", from: lo, to: hi, x0: r0, x1: r1 }],
+    at: (t) => linearAt(clampTime(t)),
+    gaps: [],
+    broken: false,
+  });
 
   // Gate: is a linear axis actually crowded? Only the DATA points count here,
-  // not the domain edges a caller padded with - two isolated marks far apart
-  // read perfectly well on a straight axis, and breaking between them would
-  // trade real information for a glyph.
+  // not the domain edges a caller padded with.
   const dataPoints = Array.from(
-    new Set(
-      times.filter((t) => Number.isFinite(t)).map((t) => Math.min(Math.max(t, lo), hi)),
-    ),
+    new Set(times.filter((t) => Number.isFinite(t)).map(clampTime)),
   ).sort((a, b) => a - b);
   let crowded = false;
   for (let i = 1; i < dataPoints.length; i++) {
@@ -169,15 +175,13 @@ export function segmentedTimeScale(
       break;
     }
   }
-  if (!crowded) {
-    const linear: TimelineSegment = { kind: "span", from: lo, to: hi, x0: r0, x1: r1 };
-    return {
-      segments: [linear],
-      at: (t) => linearAt(Math.min(Math.max(t, lo), hi)),
-      gaps: [],
-      broken: false,
-    };
-  }
+  if (!crowded) return asLinear();
+
+  // Significant times, clamped into the domain, deduplicated, ascending. The
+  // edges count too: they bound the first and last span.
+  const marks = Array.from(
+    new Set([lo, hi, ...times].filter((t) => Number.isFinite(t)).map(clampTime)),
+  ).sort((a, b) => a - b);
 
   const gapSizes: number[] = [];
   for (let i = 1; i < marks.length; i++) gapSizes.push(marks[i] - marks[i - 1]);
@@ -214,58 +218,82 @@ export function segmentedTimeScale(
   });
 
   const spans = draft.filter((d) => d.kind === "span");
-  const gapCount = draft.length - spans.length;
+  const gapDurations = draft.filter((d) => d.kind === "gap").map((g) => g.to - g.from);
+  const gapCount = gapDurations.length;
 
-  // Breaks are only worth their glyph if real width is left for the data. When
-  // they would eat the chart, fall back to a plain linear axis rather than
-  // rendering something unreadable.
-  const widthForSpans = totalWidth - gapCount * gapWidth;
-  if (gapCount === 0 || widthForSpans < Math.max(minSpanWidth, totalWidth * 0.35)) {
-    const linear: TimelineSegment = { kind: "span", from: lo, to: hi, x0: r0, x1: r1 };
-    return {
-      segments: [linear],
-      at: (t) => r0 + ((Math.min(Math.max(t, lo), hi) - lo) / totalSpan) * totalWidth,
-      gaps: [],
-      broken: false,
-    };
+  // Breaks are only worth their glyph if real width is left for the data.
+  if (gapCount === 0 || totalWidth - gapCount * minGapWidth < Math.max(minSpanWidth, totalWidth * 0.3)) {
+    return asLinear();
   }
 
-  const weigh = options.spanWeight ?? ((from, to) => to - from);
-  const widths = allocate(
-    spans.map((s) => Math.max(0, weigh(s.from, s.to))),
-    widthForSpans,
-    minSpanWidth,
+  const needs = spans.map((s) =>
+    Math.max(minSpanWidth, Math.max(0, weigh(s.from, s.to)) + 2 * spanMargin),
   );
+  const needTotal = sumOf(needs);
+
+  let spanWidths: number[];
+  let gapWidths: number[];
+  if (needTotal + gapCount * minGapWidth <= totalWidth) {
+    // Room to spare: spans take exactly what they need, breaks share the rest
+    // in proportion to how much time each one skips, so the widest break stands
+    // for the longest silence.
+    spanWidths = needs;
+    const leftover = totalWidth - needTotal - gapCount * minGapWidth;
+    const durationTotal = sumOf(gapDurations) || 1;
+    gapWidths = gapDurations.map(
+      (d) => minGapWidth + (leftover * d) / durationTotal,
+    );
+  } else {
+    // Tight: breaks shrink to their minimum and the spans share what is left.
+    gapWidths = gapDurations.map(() => minGapWidth);
+    spanWidths = allocate(needs, totalWidth - gapCount * minGapWidth, minSpanWidth);
+  }
 
   const segments: TimelineSegment[] = [];
   let x = r0;
   let spanIndex = 0;
+  let gapIndex = 0;
   for (const piece of draft) {
-    const w = piece.kind === "gap" ? gapWidth : widths[spanIndex++];
+    const w = piece.kind === "gap" ? gapWidths[gapIndex++] : spanWidths[spanIndex++];
     segments.push({ ...piece, x0: x, x1: x + w });
     x += w;
   }
 
   return {
     segments,
-    at: (t) => positionIn(segments, Math.min(Math.max(t, lo), hi)),
+    at: (t) => positionIn(segments, clampTime(t), spanMargin),
     gaps: segments.filter((s) => s.kind === "gap"),
     broken: true,
   };
 }
 
-/** Coordinate of `t` on a segmented axis; linear inside its own segment. */
-function positionIn(segments: readonly TimelineSegment[], t: number): number {
-  for (const s of segments) {
+/**
+ * Coordinate of `t` on a segmented axis; linear inside its own segment, inset by
+ * `margin` so a span's outermost points keep clear of the seams.
+ */
+function positionIn(
+  segments: readonly TimelineSegment[],
+  t: number,
+  margin: number,
+): number {
+  // Spans win ties. A gap's `to` is the next span's `from`, so a mark sitting
+  // exactly on a seam belongs to both - and taking the gap put the first point
+  // of every cluster on the break glyph itself, which is what made the break
+  // look glued to a node.
+  const ordered = [...segments].sort((a, b) => Number(a.kind === "gap") - Number(b.kind === "gap"));
+  for (const s of ordered) {
     if (t >= s.from && t <= s.to) {
+      // Never let the inset exceed the block, or the ends would cross over.
+      const inset = Math.min(margin, (s.x1 - s.x0) / 3);
+      const a = s.x0 + inset;
+      const b = s.x1 - inset;
       const span = s.to - s.from;
       // A zero-duration span (a cluster at one instant) puts everything at its
-      // centre, which keeps the dots together instead of on the seam.
-      if (!(span > 0)) return (s.x0 + s.x1) / 2;
-      return s.x0 + ((t - s.from) / span) * (s.x1 - s.x0);
+      // centre, which keeps the dots together instead of on a seam.
+      if (!(span > 0)) return (a + b) / 2;
+      return a + ((t - s.from) / span) * (b - a);
     }
   }
-  // Only reachable for a time in no segment (shouldn't happen after clamping).
   return segments.length ? segments[segments.length - 1].x1 : 0;
 }
 
@@ -282,9 +310,6 @@ function allocate(
 ): number[] {
   const n = weights.length;
   if (n === 0) return [];
-
-  // Not enough room to honour the floor everywhere: split evenly and let the
-  // caller's label layout cope. Better a cramped chart than a negative width.
   if (total < minimum * n) return new Array(n).fill(total / n);
 
   const out = new Array<number>(n).fill(0);
@@ -297,7 +322,6 @@ function allocate(
 
     let pinnedThisPass = false;
     for (const i of freeIndices) {
-      // All-zero weights (every cluster an instant) share the pool evenly.
       out[i] = weightSum > 0 ? (weights[i] / weightSum) * pool : pool / freeIndices.length;
       if (out[i] < minimum) {
         out[i] = minimum;
@@ -308,12 +332,6 @@ function allocate(
     if (!pinnedThisPass) break;
   }
   return out;
-}
-
-function sumOf(ns: readonly number[]): number {
-  let t = 0;
-  for (const n of ns) t += n;
-  return t;
 }
 
 /**
@@ -331,36 +349,43 @@ export function estimateTextWidth(label: string, fontSize: number): number {
 
 export interface LabelPlacement<T> {
   item: T;
-  /** Axis coordinate of the event. */
+  /** Axis coordinate of the group this label belongs to. */
   x: number;
-  /** 0 = nearest the axis, growing outwards. */
+  /** First row used, 0 = nearest the axis, growing outwards. */
   row: number;
-  /** Which side of the axis the label sits on. */
+  /** How many consecutive rows the item occupies. */
+  rowSpan: number;
+  /** Which side of the axis the item sits on. */
   side: "above" | "below";
   /** Text anchor, adjusted so edge labels stay inside the frame. */
   anchor: "start" | "middle" | "end";
-  /** Anchor coordinate for the text element. */
+  /** Anchor coordinate for the text elements. */
   textX: number;
 }
 
 /**
- * Place labels so none overlap: walk events left to right and drop each into
- * the first row whose last label ends far enough to the left, alternating sides
- * so the row nearest the axis fills first.
+ * Place items so none overlap: walk them left to right and drop each into the
+ * first slot whose rows are all free far enough to the left, alternating sides
+ * so the rows nearest the axis fill first.
  *
  * Replaces plain `index % 2` alternation, which only ever separates ADJACENT
  * events - with a cluster, events i and i+2 land in the same row at nearly the
  * same x and their labels overlap (measured: 82px of overlap with three events).
+ *
+ * An item may claim several rows (`rowSpan`), which is how one dot carries the
+ * stacked names of everything that falls on the same day.
  */
 export function placeLabels<T>(
   items: readonly T[],
   opts: {
     x: (item: T) => number;
-    label: (item: T) => string;
-    fontSize: number;
+    /** Widest label the item will render. */
+    width: (item: T) => number;
+    /** Rows the item needs; defaults to 1. */
+    rowSpan?: (item: T) => number;
     /** Coordinate bounds labels must stay inside. */
     bounds: readonly [number, number];
-    /** Minimum horizontal breathing room between two labels in a row. */
+    /** Minimum horizontal breathing room between two items in a row. */
     gap?: number;
   },
 ): { placements: Array<LabelPlacement<T>>; rowsAbove: number; rowsBelow: number } {
@@ -376,7 +401,8 @@ export function placeLabels<T>(
 
   for (const item of ordered) {
     const x = opts.x(item);
-    const width = estimateTextWidth(opts.label(item), opts.fontSize);
+    const width = opts.width(item);
+    const rowSpan = Math.max(1, Math.round(opts.rowSpan?.(item) ?? 1));
 
     // Edge labels are anchored inwards so they cannot spill out of the frame.
     const anchor: "start" | "middle" | "end" =
@@ -385,21 +411,27 @@ export function placeLabels<T>(
     const left = anchor === "start" ? textX : anchor === "end" ? textX - width : textX - width / 2;
     const right = left + width;
 
-    // First free row, nearest the axis first, alternating sides.
+    // First slot whose whole row range is clear, nearest the axis first.
     let row = 0;
     let side: "above" | "below" = "above";
     for (let slot = 0; ; slot++) {
       side = slot % 2 === 0 ? "above" : "below";
       row = Math.floor(slot / 2);
-      const key = `${side}:${row}`;
-      const lastRight = occupied.get(key);
-      if (lastRight === undefined || left >= lastRight + gap) break;
+      let fits = true;
+      for (let r = row; r < row + rowSpan; r++) {
+        const lastRight = occupied.get(`${side}:${r}`);
+        if (lastRight !== undefined && left < lastRight + gap) {
+          fits = false;
+          break;
+        }
+      }
+      if (fits) break;
     }
-    occupied.set(`${side}:${row}`, right);
-    if (side === "above") rowsAbove = Math.max(rowsAbove, row + 1);
-    else rowsBelow = Math.max(rowsBelow, row + 1);
+    for (let r = row; r < row + rowSpan; r++) occupied.set(`${side}:${r}`, right);
+    if (side === "above") rowsAbove = Math.max(rowsAbove, row + rowSpan);
+    else rowsBelow = Math.max(rowsBelow, row + rowSpan);
 
-    placements.push({ item, x, row, side, anchor, textX });
+    placements.push({ item, x, row, rowSpan, side, anchor, textX });
   }
 
   return { placements, rowsAbove, rowsBelow };
