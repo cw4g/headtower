@@ -52,9 +52,12 @@ jobs:
         with:
           context: .
           push: true
+          # No HEADTOWER_BASE_PATH here. It is baked in at build time, so baking
+          # one deployment's sub-path into the published image means nobody else
+          # can serve it at the root -- and nothing in the docs says the image is
+          # mounted under /admin. Operators who want a sub-path rebuild.
           build-args: |
             GIT_SHA=${{ github.sha }}
-            HEADTOWER_BASE_PATH=/admin
           tags: |
             ${{ env.APP_IMAGE }}:latest
             ${{ env.APP_IMAGE }}:sha-${{ github.sha }}
