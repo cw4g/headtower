@@ -60,7 +60,7 @@ export async function completeSetupAction(
   input: CompleteSetupInput,
 ): Promise<CompleteSetupResult> {
   // Already configured: nothing to persist; just enter the console.
-  if (getConfig().headscale) redirect("/");
+  if (getConfig().headscale) redirect("/machines");
 
   // Mirror the Authentication view's guard: OIDC sign-in signs its session
   // cookie with HEADTOWER_SESSION_SECRET, which proxy.ts verifies before any DB
@@ -105,7 +105,7 @@ export async function completeSetupAction(
 
   // Fresh connection is live: enter the console (which routes on to /login when
   // OIDC was just enabled, since there is no session yet).
-  redirect("/");
+  redirect("/machines");
 }
 
 /** Host of a URL for the audit label; falls back to the raw string. */
