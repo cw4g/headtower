@@ -28,7 +28,7 @@ import {
   upsertOidcUser,
 } from "@/lib/auth/session";
 import { SESSION_COOKIE } from "@/lib/auth/session-token";
-import { originFromHeaders } from "@/lib/auth/request";
+import { originFromHeaders, publicRequestUrl } from "@/lib/auth/request";
 import { recordAudit } from "@/lib/audit";
 
 // Always run against live state; never cache or prerender a callback.
@@ -45,7 +45,12 @@ export async function GET(request: NextRequest): Promise<Response> {
     return back(origin, "disabled");
   }
 
-  const currentUrl = new URL(request.url);
+  // Re-homed onto the public origin, NOT `new URL(request.url)`: this URL is
+  // also handed to `completeLogin` -> `client.authorizationCodeGrant`, which
+  // derives the token request's `redirect_uri` from it. With the internal bind
+  // address the provider rejects the exchange as a redirect_uri mismatch, which
+  // surfaces in the UI only as "Could not complete sign-in with the provider".
+  const currentUrl = publicRequestUrl(request.url, origin);
 
   // The provider may report an error instead of returning a code.
   const providerError = currentUrl.searchParams.get("error");
