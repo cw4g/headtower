@@ -24,9 +24,30 @@ export const APP_VERSION: string = pkg.version;
 export const BUILD_SHA: string | null =
   process.env.HEADTOWER_GIT_SHA?.trim() || null;
 
-const VERSION_URL = "https://headtower.niheshr.com/version.json";
+const DEFAULT_VERSION_URL = "https://headtower.niheshr.com/version.json";
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const FETCH_TIMEOUT_MS = 3_000;
+
+/**
+ * Resolve where -- and whether -- to look for the published version.
+ *
+ * Both knobs exist for deployments the default cannot serve honestly. A build
+ * carrying its own version (a fork, a patched image) compares against a
+ * `version.json` that describes a *different* codebase, so the indicator claims
+ * an update forever and may even point downhill; an air-gapped install cannot
+ * reach the URL at all. Saying nothing beats saying something untrue.
+ *
+ * Unset variables keep the previous behaviour exactly. The environment is
+ * injectable so the precedence is testable without reloading the module.
+ */
+export function updateCheckConfig(
+  env: Record<string, string | undefined> = process.env,
+): { enabled: boolean; url: string } {
+  const enabled =
+    (env.HEADTOWER_UPDATE_CHECK ?? "").trim().toLowerCase() !== "false";
+  const url = env.HEADTOWER_VERSION_URL?.trim() || DEFAULT_VERSION_URL;
+  return { enabled, url };
+}
 
 interface RemoteVersion {
   version: string;
@@ -53,10 +74,13 @@ export async function checkForUpdate(): Promise<UpdateCheck> {
 
 async function fetchLatest(): Promise<UpdateCheck> {
   const none: UpdateCheck = { available: false, latestVersion: null };
+  const { enabled, url } = updateCheckConfig();
+  if (!enabled) return none;
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const response = await fetch(VERSION_URL, {
+    const response = await fetch(url, {
       signal: controller.signal,
       cache: "no-store",
     });
