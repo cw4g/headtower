@@ -6,8 +6,8 @@
  *
  * The terminal never talks to the Headtower agent's websocket directly with a
  * long-lived secret - it asks the server for a one-time, 60s-lived token, then
- * opens the websocket itself with that token in the URL. This keeps
- * `HEADTOWER_AGENT_SSH_SECRET` server-only.
+ * opens the websocket itself with that token in the URL. This keeps the agent's
+ * SSH secret server-only.
  *
  * Token shape, MUST match the agent (see `agent/ssh.go` `verifySSHToken`):
  *
@@ -25,6 +25,7 @@
 
 import { createHmac } from "node:crypto";
 import { audit, authorize, actorLabel } from "@/lib/authz";
+import { getConfig } from "@/lib/config";
 import { recordSshSession } from "@/lib/ssh-sessions";
 
 /** Token validity window. Long enough to open the socket, short enough to
@@ -58,12 +59,19 @@ export async function mintSshToken(
     return { ok: false, error: "Enter an SSH user." };
   }
 
-  const secret = process.env.HEADTOWER_AGENT_SSH_SECRET?.trim();
+  // Through getConfig, NOT process.env directly: the effective secret is
+  // DB-first with the environment as fallback, and Settings > Agent offers a
+  // field that writes it to the DB. Reading only the environment made that
+  // field a control that cannot take effect - it saved, the panel reported the
+  // secret as "set", the page promised "Changes apply immediately, without a
+  // restart", and the terminal still refused with the message below.
+  const secret = getConfig().agent.sshSecret?.trim();
   if (!secret) {
     return {
       ok: false,
       error:
-        "The SSH terminal isn't enabled: HEADTOWER_AGENT_SSH_SECRET is not configured on the server.",
+        "The SSH terminal isn't enabled: no agent SSH secret is configured. " +
+        "Set one under Settings > Agent, or pass HEADTOWER_AGENT_SSH_SECRET to the server.",
     };
   }
 
