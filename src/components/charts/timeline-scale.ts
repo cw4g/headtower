@@ -30,8 +30,8 @@
  *     (31% of the chart), drawing one day eight times wider than the 176-day
  *     break beside it.
  *   - Sizing spans by content but still stretching them to fill the frame gave
- *     a one-day cluster ~600 units while 176 days kept 26 - a day drawn 22
- *     times wider than half a year.
+ *     a one-day step 484 units while the 176-day break kept 26 - the day drawn
+ *     18 times wider than the half-year beside it.
  *
  * A break is the right elastic element because it is the only part of the axis
  * already declared non-linear: stretching it costs no honesty, while stretching
