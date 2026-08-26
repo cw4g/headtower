@@ -16,13 +16,54 @@
  *
  * Exposed surface:
  *   types     RecordAuditInput, ListAuditFilter, AuditPage, AuditEntry
- *   functions recordAudit(input), listAudit(filter?)
+ *   functions recordAudit(input), listAudit(filter?),
+ *             resolveActorNames(ids), actorName(actor, names)
  */
 
-import { and, count, desc, eq, type SQL } from "drizzle-orm";
-import { auditLog, db, type AuditDetail, type AuditEntry } from "@/lib/db";
+import { and, count, desc, eq, inArray, type SQL } from "drizzle-orm";
+import { appUser, auditLog, db, type AuditDetail, type AuditEntry } from "@/lib/db";
 
 export type { AuditEntry } from "@/lib/db";
+
+/**
+ * Resolve stored actor ids to current display names.
+ *
+ * Every trail row keeps a stable actor id (an `app_user.id`, or "operator" in
+ * single-operator mode) rather than a name, so one person stays one actor across
+ * an IdP-driven rename; the join happens at render time, here.
+ *
+ * Best-effort and backward-tolerant: a read failure yields an empty map, and any
+ * id without a matching account falls back to the stored value via
+ * {@link actorName}. It lives in this module rather than in the audit page
+ * because the policy revision history needs the same mapping.
+ */
+export async function resolveActorNames(
+  actorIds: string[],
+): Promise<Map<string, string>> {
+  const ids = Array.from(new Set(actorIds.filter((id) => id && id.trim())));
+  const names = new Map<string, string>();
+  if (ids.length === 0) return names;
+  try {
+    const rows = await db
+      .select({ id: appUser.id, name: appUser.name })
+      .from(appUser)
+      .where(inArray(appUser.id, ids));
+    for (const row of rows) names.set(row.id, row.name);
+  } catch {
+    // Leave the map empty; callers fall back to the raw actor id.
+  }
+  return names;
+}
+
+/**
+ * The display name for a stored actor id: the resolved account name, the
+ * friendly "Operator" for single-operator mode, or the raw value verbatim for a
+ * legacy name-based row or an id whose account no longer exists.
+ */
+export function actorName(actor: string, names: Map<string, string>): string {
+  if (actor === "operator") return "Operator";
+  return names.get(actor) ?? actor;
+}
 
 /** Fields accepted when writing an audit entry. `ts` is stamped automatically. */
 export interface RecordAuditInput {

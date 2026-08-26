@@ -8,9 +8,8 @@ import {
   ScrollText,
   SquareTerminal,
 } from "lucide-react";
-import { inArray } from "drizzle-orm";
-import { appUser, auditLog, db, type AuditEntry } from "@/lib/db";
-import { listAudit } from "@/lib/audit";
+import { auditLog, db, type AuditEntry } from "@/lib/db";
+import { actorName, listAudit, resolveActorNames } from "@/lib/audit";
 import { sessionCan } from "@/lib/authz";
 import { listSshSessions, type SshSession } from "@/lib/ssh-sessions";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
@@ -281,42 +280,6 @@ async function loadFacets(): Promise<RawFacets> {
     targetTypes: nonEmpty(targetTypes.map((row) => row.value)),
     actorIds: nonEmpty(actors.map((row) => row.value)),
   };
-}
-
-/**
- * Resolve stable actor ids to current display names for render. The trail stores
- * a stable actor id per row (an `app_user.id`, or "operator" in single-operator
- * mode); we join those against `app_user` here so each person shows under one
- * identity with their up-to-date name - even after an IdP-driven rename.
- *
- * Best-effort and backward-tolerant: a read failure yields an empty map (ids
- * render verbatim), and legacy rows that stored a raw name - or any id with no
- * matching account - simply fall back to the stored value (see {@link actorName}).
- */
-async function resolveActorNames(actorIds: string[]): Promise<Map<string, string>> {
-  const ids = Array.from(new Set(actorIds.filter((id) => id && id.trim())));
-  const names = new Map<string, string>();
-  if (ids.length === 0) return names;
-  try {
-    const rows = await db
-      .select({ id: appUser.id, name: appUser.name })
-      .from(appUser)
-      .where(inArray(appUser.id, ids));
-    for (const row of rows) names.set(row.id, row.name);
-  } catch {
-    // Leave the map empty; callers fall back to the raw actor id.
-  }
-  return names;
-}
-
-/**
- * The display name for a stored actor id: the resolved account name, the friendly
- * "Operator" for single-operator mode, or the raw value verbatim for a legacy
- * name-based row or an id whose account no longer exists.
- */
-function actorName(actor: string, names: Map<string, string>): string {
-  if (actor === "operator") return "Operator";
-  return names.get(actor) ?? actor;
 }
 
 function AuditRow({
