@@ -12,7 +12,8 @@
 
 import { revalidatePath } from "next/cache";
 import { policy } from "@/lib/headscale";
-import { audit, authorize } from "@/lib/authz";
+import { actorLabel, audit, authorize } from "@/lib/authz";
+import { rememberRevision } from "@/lib/db";
 import {
   evaluateReachability,
   parsePolicy,
@@ -28,6 +29,8 @@ export interface SavePolicyState {
   error?: string;
   /** New last-updated timestamp from the control plane, on success. */
   updatedAt?: string | null;
+  /** The revision this push was recorded as (see `./history-actions`). */
+  revisionId?: number;
 }
 
 /** Persist the policy document from the editor, then revalidate the view. */
@@ -49,13 +52,29 @@ export async function savePolicy(document: string): Promise<SavePolicyState> {
     return { status: "error", error: describeHeadscaleError(err) };
   }
 
+  // Every successful push is remembered, so the history is a truthful record of
+  // what was ever live rather than only of what someone thought to save. Keyed
+  // by digest: pushing a document that is already stored - a rollback, or the
+  // same edit twice - stamps the existing row instead of adding a copy.
+  const { row, created } = await rememberRevision({
+    document,
+    actor: actorLabel(gate.session),
+    deployedAt: new Date(),
+  });
+
   await audit(gate.session, {
     action: "acl.save",
     targetType: "policy",
-    detail: { bytes: document.length, updatedAt },
+    targetId: String(row.id),
+    detail: {
+      bytes: document.length,
+      updatedAt,
+      digest: row.digest,
+      revisionCreated: created,
+    },
   });
   revalidatePath("/access");
-  return { status: "success", updatedAt };
+  return { status: "success", updatedAt, revisionId: row.id };
 }
 
 /** How an unsaved edit changes a reachability verdict versus the saved policy. */

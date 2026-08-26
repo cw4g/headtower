@@ -7,6 +7,14 @@ import {
 } from "@/lib/headscale";
 import { parseHeadscaleDetail } from "@/lib/headscale/describe";
 import { sessionCan } from "@/lib/authz";
+import { actorName, resolveActorNames } from "@/lib/audit";
+import {
+  digestOf,
+  listRevisions,
+  rememberRevision,
+  revisionState,
+  type PolicyRevisionView,
+} from "@/lib/db";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { Chip } from "@/components/ui/chip";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -56,6 +64,8 @@ export default async function AccessPage() {
     knownUsers = [];
   }
 
+  const revisions = await collectRevisions(document);
+
   return (
     <div className="flex flex-col gap-6">
       <SectionHeading
@@ -84,10 +94,52 @@ export default async function AccessPage() {
           unset={unset}
           canSave={canSave}
           knownUsers={knownUsers}
+          revisions={revisions}
         />
       )}
     </div>
   );
+}
+
+/**
+ * The saved revisions, newest first, classified against what is live.
+ *
+ * Also captures the running document as a baseline the first time it is seen.
+ * Writing during a render is unusual but not new here - `snapshot` is recorded
+ * on dashboard load for the same reason - and it is safe because the digest is
+ * unique, so a double render cannot produce a duplicate. Without it the history
+ * would start empty and the first rollback would have no target: the one policy
+ * an operator is most likely to want back is the one that was running before
+ * they touched anything.
+ */
+async function collectRevisions(liveDocument: string): Promise<PolicyRevisionView[]> {
+  const live = liveDocument.trim() === "" ? null : liveDocument;
+  const liveDigest = live ? digestOf(live) : null;
+
+  if (live) {
+    await rememberRevision({
+      document: live,
+      // Not the signed-in operator: nobody here authored this, it was found on
+      // the control plane. A real account id would put a name to someone else's
+      // work in the list and in the audit trail.
+      actor: "headscale",
+      note: "as found on the control plane",
+    });
+  }
+
+  const rows = await listRevisions();
+  const names = await resolveActorNames(rows.map((row) => row.actor));
+  return rows.map((row) => ({
+    id: row.id,
+    createdAt: row.createdAt.getTime(),
+    actor: row.actor,
+    actorName: row.actor === "headscale" ? "Control plane" : actorName(row.actor, names),
+    note: row.note,
+    digest: row.digest,
+    bytes: row.document.length,
+    lastDeployedAt: row.lastDeployedAt?.getTime() ?? null,
+    state: revisionState(row, liveDigest),
+  }));
 }
 
 /**

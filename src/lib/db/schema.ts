@@ -2,7 +2,7 @@
  * Headtower local database schema (server-only).
  *
  * Headscale stays the source of truth for tailnet data; this database holds
- * ONLY Headtower's own state. Nine tables:
+ * ONLY Headtower's own state. Ten tables:
  *
  *   audit_log         append-only operator action trail (one row per mutation)
  *   app_user          Headtower accounts (OIDC `sub` -> role), distinct from tailnet users
@@ -27,6 +27,11 @@
  *                     note, environment, and free-form labels (see
  *                     @/lib/db/node-metadata). These live ONLY here and are never
  *                     pushed to Headscale; the node id is the shared key.
+ *   policy_revision   saved ACL policy documents, keyed by content digest (see
+ *                     @/lib/db/policy-revisions). Headscale's API has no notion
+ *                     of policy history - GET and PUT of a single current
+ *                     document is all there is - so this table is the only place
+ *                     an earlier version can be kept and rolled back to.
  *
  * The Drizzle table definitions below are the typed query surface; {@link SCHEMA_DDL}
  * is the matching idempotent DDL the client runs on first import to create the
@@ -34,12 +39,13 @@
  *
  * Exposed surface:
  *   tables   auditLog, appUser, session, appSettings, oidcProvider, personalApiKey,
- *            snapshots, sshSession, nodeMetadata
+ *            snapshots, sshSession, nodeMetadata, policyRevision
  *   types    AuditEntry / NewAuditEntry, AppUser / NewAppUser,
  *            SessionRecord / NewSessionRecord, AppSetting / NewAppSetting,
  *            OidcProviderRow / NewOidcProviderRow, PersonalApiKeyRow / NewPersonalApiKeyRow,
  *            Snapshot / NewSnapshot, SshSession / NewSshSession,
- *            NodeMetadataRow / NewNodeMetadataRow, AuditDetail
+ *            NodeMetadataRow / NewNodeMetadataRow, PolicyRevisionRow /
+ *            NewPolicyRevisionRow, AuditDetail
  *   ddl      SCHEMA_DDL
  */
 
@@ -261,6 +267,40 @@ export const nodeMetadata = sqliteTable("node_metadata", {
     .$defaultFn(() => new Date()),
 });
 
+/**
+ * A saved ACL policy document, identified by the digest of its content.
+ *
+ * The digest is UNIQUE on purpose, and it is what makes the table a set of
+ * distinct documents rather than a log of button presses: deploying a document
+ * that is already stored touches the existing row instead of adding a copy, so
+ * rolling back to last week's policy and forward again leaves two rows, not
+ * four. The sequence of who deployed what and when lives in `audit_log`, which
+ * is the append-only trail; this table holds state.
+ *
+ * `lastDeployedAt` is null for a draft that has never gone live. Whether a row
+ * is live *right now* is deliberately NOT stored - it is decided by comparing
+ * this digest with the document Headscale currently serves, so a policy changed
+ * out of band (CLI, another tool) leaves no row claiming to be live. A stored
+ * flag would have gone on asserting control that was lost.
+ */
+export const policyRevision = sqliteTable("policy_revision", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  /** When this document was first stored here. */
+  createdAt: integer("created_at", { mode: "timestamp_ms" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  /** Who stored it: an `app_user` id, or "operator" - same as the audit trail. */
+  actor: text("actor").notNull(),
+  /** The raw HuJSON document, verbatim. Not a secret; stored in plaintext. */
+  document: text("document").notNull(),
+  /** SHA-256 of `document`, hex. The row's real identity. */
+  digest: text("digest").notNull(),
+  /** Optional operator label, e.g. "before opening the guest tag". */
+  note: text("note"),
+  /** Last time this exact document was pushed to Headscale; null = draft. */
+  lastDeployedAt: integer("last_deployed_at", { mode: "timestamp_ms" }),
+});
+
 export type AuditEntry = typeof auditLog.$inferSelect;
 export type NewAuditEntry = typeof auditLog.$inferInsert;
 export type AppUser = typeof appUser.$inferSelect;
@@ -279,6 +319,8 @@ export type SshSession = typeof sshSession.$inferSelect;
 export type NewSshSession = typeof sshSession.$inferInsert;
 export type NodeMetadataRow = typeof nodeMetadata.$inferSelect;
 export type NewNodeMetadataRow = typeof nodeMetadata.$inferInsert;
+export type PolicyRevisionRow = typeof policyRevision.$inferSelect;
+export type NewPolicyRevisionRow = typeof policyRevision.$inferInsert;
 
 /**
  * Idempotent DDL run once per process on import (see ./client). Mirrors the
@@ -378,4 +420,16 @@ CREATE TABLE IF NOT EXISTS node_metadata (
   labels TEXT,
   updated_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS policy_revision (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  created_at INTEGER NOT NULL,
+  actor TEXT NOT NULL,
+  document TEXT NOT NULL,
+  digest TEXT NOT NULL,
+  note TEXT,
+  last_deployed_at INTEGER
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_policy_revision_digest ON policy_revision (digest);
+CREATE INDEX IF NOT EXISTS idx_policy_revision_created_at ON policy_revision (created_at);
 `;

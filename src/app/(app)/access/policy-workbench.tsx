@@ -6,6 +6,7 @@ import {
   CircleCheck,
   CircleSlash,
   GitCompare,
+  History,
   LayoutPanelLeft,
   Minus,
   Radar,
@@ -24,8 +25,10 @@ import {
   type PolicyModel,
   type Validity,
 } from "@/lib/policy";
+import type { PolicyRevisionView } from "@/lib/db/policy-revision-types";
 import { savePolicy } from "./actions";
 import { DiffView } from "./diff-view";
+import { HistoryPanel } from "./history-panel";
 import { JsonEditor } from "./json-editor";
 import { LintPanel } from "./lint-panel";
 import { ReachabilityTester } from "./reachability-tester";
@@ -42,9 +45,14 @@ interface PolicyWorkbenchProps {
   canSave?: boolean;
   /** Live tailnet users (names/emails) for the linter and the Test tab. */
   knownUsers?: string[];
+  /**
+   * Saved policy revisions, newest first, for the History tab. Resolved on the
+   * server (see the page) because the store reads SQLite.
+   */
+  revisions?: PolicyRevisionView[];
 }
 
-type Tab = "visual" | "json" | "review" | "test";
+type Tab = "visual" | "json" | "review" | "test" | "history";
 
 const PARSE_FALLBACK = "This document isn't valid HuJSON yet.";
 
@@ -53,6 +61,7 @@ const TAB_OPTIONS: SegmentedOption<Tab>[] = [
   { value: "json", label: "JSON", icon: Braces },
   { value: "review", label: "Review", icon: GitCompare },
   { value: "test", label: "Test", icon: Radar },
+  { value: "history", label: "History", icon: History },
 ];
 
 /** Vocabulary tokens the Test tab offers as source/destination suggestions. */
@@ -81,6 +90,7 @@ export function PolicyWorkbench({
   unset = false,
   canSave: writable = true,
   knownUsers = [],
+  revisions = [],
 }: PolicyWorkbenchProps) {
   const initial = React.useMemo(
     () => parsePolicy(initialDocument),
@@ -183,6 +193,22 @@ export function PolicyWorkbench({
     setTab("json");
   }
 
+  /**
+   * Pull a stored revision into the editor. Deliberately does NOT deploy: the
+   * whole point of the history is that saving here and pushing to the control
+   * plane are separate acts. It lands on Visual (or JSON when the document will
+   * not parse) so the operator can read it before deciding.
+   */
+  function loadRevision(document: string) {
+    setValue(document);
+    const parsed = parsePolicy(document);
+    setModel(parsed.model);
+    setRoot(parsed.root);
+    setParseError(parsed.ok ? null : (parsed.error ?? PARSE_FALLBACK));
+    setSaveError(null);
+    setTab(parsed.ok ? "visual" : "json");
+  }
+
   // Route each tab: Visual re-parses so the builder reflects raw edits; the
   // others (JSON, Review, Test) read live state and just switch.
   function selectTab(next: Tab) {
@@ -254,12 +280,19 @@ export function PolicyWorkbench({
         />
       ) : tab === "review" ? (
         <DiffView before={savedValue} after={value} />
-      ) : (
+      ) : tab === "test" ? (
         <ReachabilityTester
           savedDocument={savedValue}
           editedDocument={value}
           dirty={dirty}
           suggestions={vocab}
+        />
+      ) : (
+        <HistoryPanel
+          revisions={revisions}
+          editorDocument={value}
+          canWrite={writable}
+          onLoad={loadRevision}
         />
       )}
 
@@ -289,6 +322,10 @@ export function PolicyWorkbench({
           ) : tab === "test" ? (
             <span className="text-ink-faint">
               Reachability is evaluated over the policy model, not the live tailnet.
+            </span>
+          ) : tab === "history" ? (
+            <span className="text-ink-faint">
+              Saved here, not on the control plane. Deploy sends a version to Headscale.
             </span>
           ) : (
             <span className="text-ink-faint">

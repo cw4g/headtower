@@ -37,6 +37,27 @@ export {
 } from "./node-metadata";
 
 export {
+  digestOf,
+  listRevisions,
+  getRevision,
+  findByDigest,
+  rememberRevision,
+  markDeployed,
+  updateNote as updateRevisionNote,
+  deleteRevision,
+  type RememberResult,
+} from "./policy-revisions";
+
+export {
+  NOTE_MAX_LENGTH as REVISION_NOTE_MAX_LENGTH,
+  normalizeNote as normalizeRevisionNote,
+  revisionState,
+  stateMeta as revisionStateMeta,
+  type PolicyRevisionState,
+  type PolicyRevisionView,
+} from "./policy-revision-types";
+
+export {
   ENVIRONMENTS,
   NOTE_MAX_LENGTH,
   LABEL_MAX_COUNT,
@@ -60,6 +81,7 @@ export {
   appSettings,
   snapshots,
   nodeMetadata,
+  policyRevision,
   SCHEMA_DDL,
   type AuditEntry,
   type NewAuditEntry,
@@ -73,5 +95,7 @@ export {
   type NewSnapshot,
   type NodeMetadataRow,
   type NewNodeMetadataRow,
+  type PolicyRevisionRow,
+  type NewPolicyRevisionRow,
   type AuditDetail,
 } from "./schema";
