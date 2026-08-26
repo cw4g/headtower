@@ -41,6 +41,19 @@ export const toneText: Record<ChartTone, string> = {
   neutral: "text-ink-muted",
 };
 
+/**
+ * Estimate the rendered width of an SVG text label.
+ *
+ * These charts are server-renderable, so there is no `getComputedTextLength` to
+ * ask - a layout has to guess before the browser measures. 0.58em per character
+ * is a deliberate slight over-estimate for the console's sans stack:
+ * over-estimating spreads labels a little too far, under-estimating lets them
+ * touch, and only one of those is a bug.
+ */
+export function estimateTextWidth(label: string, fontSize: number): number {
+  return label.length * fontSize * 0.58 + 4;
+}
+
 export function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
 }

@@ -55,7 +55,10 @@ export async function captureTailnetSnapshot(input: {
     await recordSnapshotThrottled(input);
     const rows = await listSnapshots({
       sinceMs: Date.now() - HISTORY_WINDOW_MS,
-      limit: 1000,
+      // The whole window: 30 days at the default 15-minute cadence is 2,880
+      // samples, and a lower limit would quietly shorten the chart rather than
+      // saying so. Bucketing happens at render time, not here.
+      limit: 10_000,
     });
     return rows.map((row) => ({
       ts: row.ts.getTime(),

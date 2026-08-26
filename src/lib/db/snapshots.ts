@@ -33,8 +33,18 @@ export interface SnapshotInput {
 /** Default throttle: at most one recorded sample every five minutes. */
 export const SNAPSHOT_MIN_INTERVAL_MS = 5 * 60 * 1000;
 
-/** Hard cap on rows returned by {@link listSnapshots}. */
-const MAX_ROWS = 2000;
+/**
+ * Hard cap on rows returned by {@link listSnapshots}.
+ *
+ * Sized against the dashboard's 30-day window and the default 15-minute
+ * sampling: 96 samples a day is 2,880 over the window, so the old cap of 2,000
+ * would have silently turned a 30-day chart into a 10-day one. 10,000 covers the
+ * window down to 5-minute sampling; below that it truncates again, which is the
+ * honest limit of reading a whole window into memory. The chart buckets whatever
+ * arrives down to ~700 points before drawing, so the row count only costs a
+ * read, never legibility.
+ */
+const MAX_ROWS = 10_000;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.trunc(value)));
