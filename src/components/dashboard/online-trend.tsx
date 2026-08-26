@@ -75,8 +75,11 @@ export function OnlineTrend({ points }: { points: OnlineTrendPoint[] }) {
     <LineChart
       x={x}
       series={[
-        { label: "Online", data: online, tone: "online", area: true },
-        { label: "Devices", data: total, tone: "neutral" },
+        // Step, not linear: both series are whole-device counts that change at
+        // discrete moments. A diagonal between two readings would draw fractions
+        // of a device, which the axis cannot even label.
+        { label: "Online", data: online, tone: "online", area: true, curve: "step" },
+        { label: "Devices", data: total, tone: "neutral", curve: "step" },
       ]}
       xFormat={xFormat}
       xTickFormat={xTickFormat}

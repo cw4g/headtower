@@ -121,3 +121,34 @@ export function linePath(points: ReadonlyArray<readonly [number, number]>): stri
     .map(([x, y], i) => `${i ? "L" : "M"}${r2(x)} ${r2(y)}`)
     .join(" ");
 }
+
+/**
+ * Build a STEP path: hold each value until the next sample, then jump.
+ *
+ * The right shape for a sampled step function, which most things an operator
+ * counts are. "Devices online" moves in whole devices at discrete moments; a
+ * straight segment from 8 to 9 draws heights like 8.4, and that is not merely
+ * unobserved but impossible — the y axis cannot even label it. Holding the last
+ * reading claims only "this is the most recent thing we know", and it puts the
+ * jump at a definite time instead of smearing it across the interval.
+ *
+ * Step-AFTER on purpose: the value carries forward from the reading that
+ * established it. Stepping before would back-date each change to the start of
+ * the preceding interval, asserting it happened earlier than it did.
+ *
+ * Note this says nothing about UNOBSERVED stretches; those are not drawn at all
+ * (see `runsOfPresent` in ./series). Holding a value across a real gap would be
+ * the same invention in a different shape.
+ */
+export function stepPath(points: ReadonlyArray<readonly [number, number]>): string {
+  if (points.length === 0) return "";
+  const [first, ...rest] = points;
+  let d = `M${r2(first[0])} ${r2(first[1])}`;
+  let previousY = first[1];
+  for (const [x, y] of rest) {
+    d += ` L${r2(x)} ${r2(previousY)}`;
+    if (y !== previousY) d += ` L${r2(x)} ${r2(y)}`;
+    previousY = y;
+  }
+  return d;
+}

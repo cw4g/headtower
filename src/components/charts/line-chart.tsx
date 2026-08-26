@@ -23,6 +23,7 @@ import {
   estimateTextWidth,
   formatCompact,
   linePath,
+  stepPath,
   niceCeil,
   clamp,
   scaleLinear,
@@ -37,6 +38,13 @@ export interface LineChartSeries {
   tone?: ChartTone;
   /** Fill the area beneath this series. */
   area?: boolean;
+  /**
+   * How to join consecutive samples. Defaults to `"linear"` so existing callers
+   * are unaffected, but `"step"` is the honest choice for anything counted:
+   * see `stepPath` in ./shared for why a diagonal between two integer readings
+   * draws values that cannot exist.
+   */
+  curve?: "linear" | "step";
 }
 
 export interface LineChartProps {
@@ -246,7 +254,7 @@ export function LineChart({
                     if (v != null) pts.push([xPos[i], yScale(v)] as const);
                   }
                   if (pts.length === 0) return null;
-                  const d = linePath(pts);
+                  const d = s.curve === "step" ? stepPath(pts) : linePath(pts);
                   return (
                     <g key={`${s.label}-${ri}`}>
                       {s.area && pts.length > 1 && (
