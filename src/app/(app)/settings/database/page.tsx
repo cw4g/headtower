@@ -1,7 +1,10 @@
 import { Database } from "lucide-react";
 import { sessionCan } from "@/lib/authz";
+import { getConfig } from "@/lib/config";
+import { countSnapshots, latestSnapshot } from "@/lib/db";
 import { Card, CardBody } from "@/components/ui/card";
 import { ExportDatabaseButton } from "./export-button";
+import { SamplingPanel } from "./sampling-panel";
 
 // The write capability is read fresh per request: this gates a sensitive
 // download, not just cosmetic UI, so it must never be served stale.
@@ -9,6 +12,17 @@ export const dynamic = "force-dynamic";
 
 export default async function DatabasePage() {
   const canWrite = await sessionCan("settings.write");
+  // Best-effort, like every other local-store read in this console: a missing
+  // database degrades the readout rather than faulting the page.
+  let lastSampleAt: number | null = null;
+  let sampleCount = 0;
+  try {
+    const latest = await latestSnapshot();
+    lastSampleAt = latest ? latest.ts.getTime() : null;
+    sampleCount = await countSnapshots();
+  } catch {
+    lastSampleAt = null;
+  }
 
   return (
     <div className="flex flex-col gap-5">
@@ -17,10 +31,17 @@ export default async function DatabasePage() {
           Database
         </h2>
         <p className="text-sm text-ink-muted">
-          Download a complete copy of Headtower&apos;s own local database, for
-          safekeeping off-box.
+          Headtower&apos;s own local store: how often it samples the tailnet for
+          the history chart, and a complete copy for safekeeping off-box.
         </p>
       </div>
+
+      <SamplingPanel
+        intervalMinutes={getConfig().snapshots.intervalMinutes}
+        lastSampleAt={lastSampleAt}
+        sampleCount={sampleCount}
+        canWrite={canWrite}
+      />
 
       <Card>
         <CardBody className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

@@ -10,6 +10,7 @@
  *   recordSnapshotThrottled  append only if the last sample is old enough
  *   latestSnapshot           the most recent sample (for the throttle window)
  *   listSnapshots            samples in a window, oldest-first (chart order)
+ *   countSnapshots           how many rows exist, for the settings readout
  *
  * It talks to the async Drizzle instance (`db`) and imports `./client` +
  * `./schema` directly rather than the `@/lib/db` barrel, to avoid an import
@@ -18,7 +19,7 @@
  * SERVER-ONLY by importing `./client` (`node:sqlite`).
  */
 
-import { desc, gte } from "drizzle-orm";
+import { count, desc, gte } from "drizzle-orm";
 import { db } from "./client";
 import { snapshots, type Snapshot } from "./schema";
 
@@ -105,4 +106,15 @@ export async function listSnapshots(
     .orderBy(desc(snapshots.ts), desc(snapshots.id))
     .limit(limit);
   return rows.reverse();
+}
+
+/**
+ * How many samples are stored in total.
+ *
+ * For the sampling settings readout: an interval is a choice about how fast this
+ * number grows, so the number belongs next to the control that sets it.
+ */
+export async function countSnapshots(): Promise<number> {
+  const row = await db.select({ total: count() }).from(snapshots).get();
+  return row?.total ?? 0;
 }

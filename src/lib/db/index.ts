@@ -25,6 +25,7 @@ export {
   recordSnapshotThrottled,
   latestSnapshot,
   listSnapshots,
+  countSnapshots,
 } from "./snapshots";
 
 export {

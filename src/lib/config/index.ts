@@ -49,6 +49,7 @@ import {
 import { ConfigError } from "./types";
 import type {
   AgentConfig,
+  SnapshotConfig,
   ConfigSource,
   HeadscaleConfig,
   HeadtowerConfig,
@@ -61,6 +62,7 @@ import type {
 export { ConfigError } from "./types";
 export type {
   AgentConfig,
+  SnapshotConfig,
   ConfigSource,
   HeadscaleConfig,
   HeadtowerConfig,
@@ -78,6 +80,7 @@ export const SETTING_KEYS = {
   agentUrl: "agent.url",
   agentSshSecret: "agent.ssh_secret",
   agentEnabled: "agent.enabled",
+  snapshotIntervalMinutes: "snapshot.interval_minutes",
 } as const;
 
 function assertServer(): void {
@@ -96,6 +99,36 @@ function readEnv(name: string): string | undefined {
   if (raw == null) return undefined;
   const trimmed = raw.trim();
   return trimmed === "" ? undefined : trimmed;
+}
+
+/**
+ * Default cadence for background tailnet sampling: one sample every 15 minutes.
+ *
+ * On by default, unlike the agent: sampling is what makes the online-over-time
+ * chart mean anything. Before this existed a sample was written only when
+ * somebody opened the dashboard, so the series recorded *when the console was
+ * used* rather than the passage of time - gaps of 2.8 days between neighbouring
+ * points were normal.
+ */
+export const DEFAULT_SNAPSHOT_INTERVAL_MINUTES = 15;
+/** Guard rails. A minute is already far more often than the chart can show. */
+export const MIN_SNAPSHOT_INTERVAL_MINUTES = 1;
+export const MAX_SNAPSHOT_INTERVAL_MINUTES = 24 * 60;
+
+/**
+ * Read a stored or environment interval into minutes: absent means the default,
+ * anything non-positive means "take no background samples", the rest is clamped.
+ */
+function normalizeSnapshotInterval(raw: string | undefined): number {
+  if (raw == null) return DEFAULT_SNAPSHOT_INTERVAL_MINUTES;
+  const parsed = Number(raw.trim());
+  if (!Number.isFinite(parsed)) return DEFAULT_SNAPSHOT_INTERVAL_MINUTES;
+  const minutes = Math.trunc(parsed);
+  if (minutes <= 0) return 0;
+  return Math.min(
+    MAX_SNAPSHOT_INTERVAL_MINUTES,
+    Math.max(MIN_SNAPSHOT_INTERVAL_MINUTES, minutes),
+  );
 }
 
 /** Validate an http(s) URL and drop any trailing slash. Throws {@link ConfigError}. */
@@ -273,10 +306,18 @@ export const getConfig: () => HeadtowerConfig = cache(() => {
 
   const agent: AgentConfig = { url: agentUrl, enabled: agentEnabled, sshSecret: agentSshSecret };
 
+  // --- Snapshot sampling (env fallback -> DB override) ---------------------
+  const dbInterval = stored[SETTING_KEYS.snapshotIntervalMinutes];
+  const rawInterval = dbInterval ?? readEnv("HEADTOWER_SNAPSHOT_INTERVAL_MINUTES");
+  const snapshots: SnapshotConfig = {
+    intervalMinutes: normalizeSnapshotInterval(rawInterval),
+  };
+
   return {
     headscale,
     oidc,
     agent,
+    snapshots,
     sources: { headscale: headscaleSource, oidc: oidcSource },
   };
 });
@@ -311,6 +352,11 @@ export interface ConfigInput {
     /** `undefined` leaves the stored secret untouched; `null`/"" clears it. */
     sshSecret?: string | null;
   } | null;
+  /**
+   * Background sampling cadence in minutes. 0 turns it off; `null` clears the
+   * stored value so the env bootstrap / default applies again.
+   */
+  snapshots?: { intervalMinutes: number } | null;
 }
 
 /**
@@ -364,6 +410,23 @@ export function setConfig(input: ConfigInput): void {
       writeSetting(SETTING_KEYS.oidcIssuer, normalizeUrl("OIDC issuer", input.oidc.issuer));
       writeSetting(SETTING_KEYS.oidcClientId, clientId);
       writeSetting(SETTING_KEYS.oidcClientSecret, encodeSecret(clientSecret));
+    }
+  }
+
+  if (input.snapshots !== undefined) {
+    if (input.snapshots === null) {
+      deleteSetting(SETTING_KEYS.snapshotIntervalMinutes);
+    } else {
+      const minutes = Math.trunc(input.snapshots.intervalMinutes);
+      if (!Number.isFinite(minutes) || minutes < 0) {
+        throw new ConfigError("The sampling interval must be 0 or more minutes.");
+      }
+      if (minutes > MAX_SNAPSHOT_INTERVAL_MINUTES) {
+        throw new ConfigError(
+          `The sampling interval cannot exceed ${MAX_SNAPSHOT_INTERVAL_MINUTES} minutes.`,
+        );
+      }
+      writeSetting(SETTING_KEYS.snapshotIntervalMinutes, String(minutes));
     }
   }
 

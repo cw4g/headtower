@@ -47,6 +47,17 @@ export interface AgentConfig {
   readonly sshSecret: string | null;
 }
 
+/** Background sampling of the tailnet-size time series (see `@/lib/sampler`). */
+export interface SnapshotConfig {
+  /**
+   * Minutes between background samples, or 0 to take none.
+   *
+   * Doubles as the throttle window for every write path, so a dashboard visit
+   * and a background tick can never both record within the same interval.
+   */
+  readonly intervalMinutes: number;
+}
+
 /** Where a resolved value came from: the DB store, the env bootstrap, or nowhere. */
 export type ConfigSource = "db" | "env" | "none";
 
@@ -57,6 +68,8 @@ export interface HeadtowerConfig {
   readonly oidc: OidcConfig | null;
   /** The optional agent sidecar; always present, `url` is null when unset. */
   readonly agent: AgentConfig;
+  /** Tailnet-size sampling cadence; always present. */
+  readonly snapshots: SnapshotConfig;
   /** Provenance of each part, for the setup UI to explain what it inherited. */
   readonly sources: {
     readonly headscale: ConfigSource;
