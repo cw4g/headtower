@@ -7,10 +7,17 @@ import { Chip } from "@/components/ui/chip";
 import { cn } from "@/lib/cn";
 
 interface DiffViewProps {
-  /** The last-saved document. */
+  /** The baseline being compared against. */
   before: string;
-  /** The current editor document. */
+  /** The document whose changes are being shown. */
   after: string;
+  /**
+   * Copy for the "nothing differs" state. Defaulted for the Review tab, which
+   * compares the editor against the saved policy; the History tab compares a
+   * stored revision against what is running and needs to say so.
+   */
+  emptyTitle?: string;
+  emptyDescription?: string;
 }
 
 type DiffKind = "context" | "add" | "remove";
@@ -106,7 +113,12 @@ const KIND_STYLE: Record<DiffKind, { row: string; sign: string; glyph: string }>
  * When nothing changed it shows a "No changes" empty state so the operator knows
  * a save would be a no-op.
  */
-export function DiffView({ before, after }: DiffViewProps) {
+export function DiffView({
+  before,
+  after,
+  emptyTitle,
+  emptyDescription,
+}: DiffViewProps) {
   const { rows, added, removed } = React.useMemo(
     () => diffLines(before, after),
     [before, after],
@@ -116,8 +128,11 @@ export function DiffView({ before, after }: DiffViewProps) {
     return (
       <EmptyState
         icon={GitCompare}
-        title="No changes"
-        description="The editor matches the saved policy. There's nothing to review or commit."
+        title={emptyTitle ?? "No changes"}
+        description={
+          emptyDescription ??
+          "The editor matches the saved policy. There's nothing to review or commit."
+        }
       />
     );
   }

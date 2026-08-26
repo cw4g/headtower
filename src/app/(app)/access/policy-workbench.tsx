@@ -113,6 +113,14 @@ export function PolicyWorkbench({
     initial.ok ? null : (initial.error ?? PARSE_FALLBACK),
   );
 
+  // The control plane's document can change without passing through this editor
+  // - a deploy from the History tab, or another operator's save. When the server
+  // re-renders with a different baseline, adopt it. Only the baseline: the
+  // editor's own text is never touched, so an in-progress edit survives.
+  React.useEffect(() => {
+    setSavedValue(initialDocument);
+  }, [initialDocument]);
+
   const dirty = value !== savedValue;
   const validity = React.useMemo<Validity>(() => validateHujson(value), [value]);
   const canSave = writable && dirty && !pending && value.trim() !== "";
@@ -291,6 +299,7 @@ export function PolicyWorkbench({
         <HistoryPanel
           revisions={revisions}
           editorDocument={value}
+          liveDocument={savedValue}
           canWrite={writable}
           onLoad={loadRevision}
         />

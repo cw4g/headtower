@@ -46,8 +46,19 @@ import {
 
 export interface HistoryPanelProps {
   revisions: PolicyRevisionView[];
-  /** The current editor document, for "save this" and the comparison. */
+  /** The current editor document — what "Save current" would store. */
   editorDocument: string;
+  /**
+   * The document the control plane is serving, which is what every comparison
+   * is made against.
+   *
+   * Diffing a revision against the EDITOR was the first attempt and it answered
+   * the wrong question twice over: the Review tab already compares the editor
+   * against the live policy, and a half-finished edit is not a baseline anybody
+   * reasons about. What an operator wants to know here is "what would change if
+   * I deployed this", and that is measured against what is running.
+   */
+  liveDocument: string;
   /** False when the role lacks acls.write: read-only list, no verbs. */
   canWrite: boolean;
   /** Load a stored document into the editor (never deploys). */
@@ -68,6 +79,7 @@ function formatWhen(epochMs: number): string {
 export function HistoryPanel({
   revisions,
   editorDocument,
+  liveDocument,
   canWrite,
   onLoad,
 }: HistoryPanelProps) {
@@ -214,7 +226,7 @@ export function HistoryPanel({
               <div className="flex flex-wrap items-center gap-1.5">
                 <RowButton
                   icon={GitCompare}
-                  label={comparing === revision.id ? "Hide diff" : "Compare with editor"}
+                  label={comparing === revision.id ? "Hide diff" : "Compare with live"}
                   onClick={() => void openCompare(revision)}
                   busy={busy}
                 />
@@ -320,9 +332,18 @@ export function HistoryPanel({
               {comparing === revision.id && comparedDocument !== null && (
                 <div className="pt-1">
                   <p className="pb-2 text-[11px] text-ink-faint">
-                    Left: revision #{revision.id}. Right: the editor as it stands.
+                    Left: the policy running now. Right: revision #{revision.id} — what
+                    deploying it would change.
                   </p>
-                  <DiffView before={comparedDocument} after={editorDocument} />
+                  {/* before = live, after = the revision, so additions and removals
+                      read as the effect of deploying, the same direction the
+                      Review tab uses for saving. */}
+                  <DiffView
+                    before={liveDocument}
+                    after={comparedDocument}
+                    emptyTitle="Identical to what's running"
+                    emptyDescription="This revision matches the policy the control plane is serving, so deploying it would change nothing."
+                  />
                 </div>
               )}
             </li>
