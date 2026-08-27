@@ -52,7 +52,20 @@ export async function captureTailnetSnapshot(input: {
   users: number;
 }): Promise<SnapshotPoint[]> {
   try {
-    await recordSnapshotThrottled(input);
+    // The CONFIGURED interval, not the module default. Both write paths have to
+    // share one window or the claim in `SnapshotConfig` - "a dashboard visit and
+    // a background tick can never both record within the same interval" - is
+    // simply untrue. It was: this path used the hardcoded 5 minutes, and a day
+    // of real data showed one 8.8-minute gap among 62 samples that were
+    // otherwise a steady 16.0 minutes apart. That outlier was a page view
+    // slipping a sample in between two ticks.
+    const intervalMinutes = getConfig().snapshots.intervalMinutes;
+    await recordSnapshotThrottled(
+      input,
+      // 0 means "no background sampling"; a visit should then still record, and
+      // the old default is the sensible floor for how often.
+      intervalMinutes > 0 ? intervalMinutes * 60_000 : undefined,
+    );
     const rows = await listSnapshots({
       sinceMs: Date.now() - HISTORY_WINDOW_MS,
       // The whole window: 30 days at the default 15-minute cadence is 2,880
